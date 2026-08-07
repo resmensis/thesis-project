@@ -36,6 +36,7 @@ class DataFilesConfig:
     datashare_path: str = "./data/datashare.csv"
     crsp_monthly_path: str = "./data/crsp_monthly.csv"
     macro_path: str = "./data/Data2024_monthly_goyal.csv" 
+    sic2_column: str = "sic2"  # Column name for industry codes in datashare.csv
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
         "permno",
         "date", "yyyymm",
@@ -189,3 +190,16 @@ class LoggingConfig:
     console_level_coding: str = "DEBUG"
     logger_name: str = "eap_ml"
     overwrite_log: bool = False
+
+
+@dataclass
+class ExpandingWindowConfig:
+    """Configuration for expanding window forecasting with annual refitting."""
+    train_start_year: int = 1957
+    initial_train_end_year: int = 1974
+    val_start_year: int = 1975
+    val_end_year: int = 1986
+    test_start_year: int = 1987
+    test_end_year_original: int = 2016
+    test_end_year_extended: int = 2021
+    refit_frequency_years: int = 1

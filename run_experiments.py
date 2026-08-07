@@ -13,15 +13,17 @@ from config import (
     ReproducibilityConfig,
     CharacteristicsFrequency,
     LoggingConfig,
+    ExpandingWindowConfig,
 )
 
-from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger
+from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
 from dataset_builder import build_complete_dataset, reduce_observations_for_coding
 from sample_splits import subset_timeframe, chronological_split
 from features import build_feature_panel
 from models_linear import fit_pooled_ols, tune_huber_regression, tune_pcr, tune_pls
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
+from expanding_window import run_expanding_window
 
 
 def main():
@@ -35,6 +37,7 @@ def main():
     grid_cfg = HyperGridConfig(use_extended_grids=False)
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
+    expand_cfg = ExpandingWindowConfig()
 
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)
 
@@ -57,6 +60,9 @@ def main():
     ensure_dir("output")
     ensure_dir(cache_cfg.cache_dir)
 
+    # ------------------------------------------------------------------
+    # 1. Build or load complete dataset
+    # ------------------------------------------------------------------
     logger.info("Building complete dataset.")
     complete = build_complete_dataset(
         datashare_path=data_cfg.datashare_path,
@@ -69,81 +75,83 @@ def main():
         possible_marco_cols=data_cfg.possible_marco_cols,
         cols_vars_monthly=freq_cfg.cols_vars_monthly,
         cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-        cols_vars_annual=freq_cfg.cols_vars_annual
+        cols_vars_annual=freq_cfg.cols_vars_annual,
+        sic2_column=data_cfg.sic2_column,
     )
 
     logger.info(f"Complete dataset shape: {complete.shape}")
 
     if run_ctrl_cfg.dataset_creation_only:
-            print("Dataset creation only mode is ON.")
-            print(f"Complete dataset created and cached at: {cache_cfg.cache_dir}/complete_dataset.parquet")
-            return
+        print("Dataset creation only mode is ON.")
+        print(f"Complete dataset created and cached at: {cache_cfg.cache_dir}/complete_dataset.parquet")
+        return
 
     if regime_cfg.mode == "coding":
         logger.info("Applying coding-mode sampling reduction.")
         complete = reduce_observations_for_coding(complete, max_stocks_per_month=regime_cfg.coding_max_stocks_per_month, random_state=repro_cfg.random_state)
 
-    feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
-    if cache_cfg.save_feature_panel:
-        save_parquet(feature_panel, f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet", enabled=True)
+    # ------------------------------------------------------------------
+    # 2. Build or load feature panel
+    # ------------------------------------------------------------------
+    feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
+    feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
+    
+    if cache_cfg.enabled and not cache_cfg.force_refit_models:
+        cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
+        cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
+        
+        if cached_panel is not None and cached_cols is not None:
+            logger.info(f"Loading cached feature panel from {feature_panel_path}")
+            feature_panel = cached_panel
+            feature_cols = cached_cols
+        else:
+            logger.info("Building feature panel (no cache found).")
+            feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
+            save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
+            save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
+    else:
+        logger.info("Building feature panel (cache disabled or force_refit).")
+        feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
+        save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
+        save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
+    
     logger.info(f"Feature panel shape: {feature_panel.shape}")
     logger.info(f"Number of feature columns: {len(feature_cols)}")
 
+    # ------------------------------------------------------------------
+    # 3. Run expanding window forecasting
+    # ------------------------------------------------------------------
+    logger.info("Starting expanding window forecasting.")
+    
     windows = {}
     if tf_cfg.run_original_window:
         windows["original"] = tf_cfg.original_end_date
     if tf_cfg.run_extended_window:
         windows["extended_2021"] = tf_cfg.extended_end_date
 
-    for name, end_date in windows.items():
-        df_win = subset_timeframe(feature_panel, end_date)
-        splits = chronological_split(df_win, split_cfg.train_end, split_cfg.val_end, end_date)
-
-        logger.info(f"Running window: {name} up to {end_date}")        
-
-        X_train = splits["train"][feature_cols].fillna(0.0)
-        y_train = splits["train"]["excess_ret_lead"]
-        X_val = splits["val"][feature_cols].fillna(0.0)
-        y_val = splits["val"]["excess_ret_lead"]
-        X_test = splits["test"][feature_cols].fillna(0.0)
-        y_test = splits["test"]["excess_ret_lead"]
-
-        logger.info(
-            f"Split sizes | train={len(splits['train'])}, val={len(splits['val'])}, test={len(splits['test'])}"
-        )        
-
-        meta_test = splits["test"][["permno", "date"]].copy()
-        if "me" in splits["test"].columns:
-            meta_test["me"] = splits["test"]["me"]
-        else:
-            meta_test["me"] = 1.0
-
-        X_train_s = X_train.copy()
-        X_val_s = X_val.copy()
-        X_test_s = X_test.copy()
-
-        benchmark_features = [c for c in [regime_cfg.ols3_size_col, regime_cfg.ols3_bm_col, regime_cfg.ols3_mom_col] if c in X_train_s.columns]
-
-        models = {}
-        if len(benchmark_features) == 3:
-            models["OLS_3"] = fit_pooled_ols(X_train_s[benchmark_features], y_train)
-        models["OLS_full"] = fit_pooled_ols(X_train_s, y_train)
-        models["Huber"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
-        models["PCR"] = tune_pcr(X_train_s, y_train, X_val_s, y_val)["model"]
-        models["PLS"] = tune_pls(X_train_s, y_train, X_val_s, y_val)["model"]
-        rf_grid = grid_cfg.rf_extended if grid_cfg.use_extended_grids else grid_cfg.rf_base
-        gbrt_grid = grid_cfg.gbrt_extended if grid_cfg.use_extended_grids else grid_cfg.gbrt_base
-        mlp_grid = grid_cfg.mlp_extended if grid_cfg.use_extended_grids else grid_cfg.mlp_base
-        models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_cfg.random_state, **gbrt_grid)["model"]
-        models["RandomForest"] = tune_random_forest(X_train, y_train, X_val, y_val, random_state=repro_cfg.random_state, **rf_grid)["model"]
-        models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_cfg.random_state, **mlp_grid)["model"]
-
-        outdir = Path("output") / name / regime_cfg.mode
-        ensure_dir(outdir)
-        pd.DataFrame({"feature": feature_cols}).to_csv(outdir / "feature_cols.csv", index=False)
-        pd.DataFrame({"model": list(models.keys())}).to_csv(outdir / "models_trained.csv", index=False)
-        meta_test.to_csv(outdir / "meta_test.csv", index=False)
-        pd.DataFrame({"y_test": y_test}).to_csv(outdir / "y_test.csv", index=False)
+    all_predictions = {}
+    all_metrics = {}
+    
+    for window_name, end_date in windows.items():
+        logger.info(f"Running expanding window: {window_name} (until {end_date})")
+        
+        predictions, metrics = run_expanding_window(
+            feature_panel=feature_panel,
+            feature_cols=feature_cols,
+            regime_config=regime_cfg,
+            grid_config=grid_cfg,
+            repro_config=repro_cfg,
+            cache_config=cache_cfg,
+            expand_config=expand_cfg,
+            window_name=window_name,
+            output_dir="output",
+        )
+        
+        all_predictions[window_name] = predictions
+        all_metrics[window_name] = metrics
+    
+    logger.info("All expanding window runs completed.")
+    logger.info(f"Total predictions: {sum(len(df) for df in all_predictions.values())}")
 
 
 if __name__ == "__main__":

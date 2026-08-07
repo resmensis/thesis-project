@@ -46,20 +46,54 @@ def compute_missingness_for_characteristics(
     return out
 
 
-def save_missingness_histogram(
+def save_missingness_lineplot(
     missing_df: pd.DataFrame,
     out_jpg_path: str,
     title: str,
-    bins: int = 20,
+    color: str = "blue",
 ):
     """
-    Save a histogram of percentage missing data per characteristic.
+    Save a line plot with dots showing missing data percentage per characteristic.
     """
-    plt.figure(figsize=(10, 6))
-    plt.hist(missing_df["missing_pct"], bins=bins, edgecolor="black")
-    plt.xlabel("Missing data percentage")
-    plt.ylabel("Number of characteristics")
+    plt.figure(figsize=(14, 6))
+    plt.plot(range(len(missing_df)), missing_df["missing_pct"], marker="o", linestyle="-", color=color, markersize=4)
+    plt.xlabel("Characteristic Index (sorted by missingness)")
+    plt.ylabel("Missing data percentage")
     plt.title(title)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_jpg_path, dpi=200, bbox_inches="tight")
+    plt.close()
+
+
+def save_missingness_comparison_plot(
+    missing_before: pd.DataFrame,
+    missing_after: pd.DataFrame,
+    out_jpg_path: str,
+    title: str = "Missing Data Percentage: Before vs After Imputation",
+):
+    """
+    Save a comparison plot showing missingness before and after imputation.
+    """
+    plt.figure(figsize=(14, 6))
+    
+    # Merge on characteristic name
+    merged = missing_before.merge(
+        missing_after, 
+        on="characteristic", 
+        suffixes=("_before", "_after")
+    )
+    
+    plt.plot(range(len(merged)), merged["missing_pct_before"], 
+             marker="o", linestyle="-", color="red", markersize=4, label="Before Imputation", alpha=0.7)
+    plt.plot(range(len(merged)), merged["missing_pct_after"], 
+             marker="s", linestyle="-", color="green", markersize=4, label="After Imputation", alpha=0.7)
+    
+    plt.xlabel("Characteristic Index")
+    plt.ylabel("Missing data percentage")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(out_jpg_path, dpi=200, bbox_inches="tight")
     plt.close()
@@ -94,7 +128,8 @@ def build_complete_dataset(
     cols_vars_quarterly: list[str],
     cols_vars_annual: list [str],
     cache_enabled: bool = True,
-    force_rebuild: bool = False,    
+    force_rebuild: bool = False,
+    sic2_column: str = "sic2",    
 ):
     logger.info(f"Building complete dataset, output: {out_path}")
     
@@ -123,7 +158,7 @@ def build_complete_dataset(
 
     logger.debug("Merging with macro data")
     merged = merged.merge(macro, on="date", how="left")
-    merged["industry_code"] = merged["sic2"].astype("string").fillna("UNK")
+    merged["industry_code"] = merged[sic2_column].astype("string").fillna("UNK")
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
 
     # ------------------------------------------------------------------
@@ -135,11 +170,11 @@ def build_complete_dataset(
     before_jpg = out_path.replace(".parquet", "_missingness_before.jpg")
 
     missing_before.to_csv(before_csv, index=False)
-    save_missingness_histogram(
+    save_missingness_lineplot(
         missing_before,
         before_jpg,
         title="Missing data percentage per characteristic (before imputation)",
-        bins=20,
+        color="red",
     )
     logger.debug(f"Saved missingness before imputation: {before_csv}, {before_jpg}")
 
@@ -158,13 +193,25 @@ def build_complete_dataset(
     after_jpg = out_path.replace(".parquet", "_missingness_after.jpg")
 
     missing_after.to_csv(after_csv, index=False)
-    save_missingness_histogram(
+    save_missingness_lineplot(
         missing_after,
         after_jpg,
         title="Missing data percentage per characteristic (after imputation)",
-        bins=20,
+        color="green",
     )
     logger.debug(f"Saved missingness after imputation: {after_csv}, {after_jpg}")
+
+    # ------------------------------------------------------------------
+    # 4. Comparison plot (before vs after)
+    # ------------------------------------------------------------------
+    comparison_jpg = out_path.replace(".parquet", "_missingness_comparison.jpg")
+    save_missingness_comparison_plot(
+        missing_before,
+        missing_after,
+        comparison_jpg,
+        title="Missing Data Percentage: Before vs After Imputation",
+    )
+    logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
 
     # Build next-month excess return target after merge/imputation stage.
     logger.debug("Building lead excess return target")
