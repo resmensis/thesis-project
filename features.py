@@ -1,7 +1,10 @@
 from __future__ import annotations
+import logging
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import QuantileTransformer
+
+logger = logging.getLogger("eap_ml.features")
 
 
 EXCLUDED_BASE = {
@@ -26,15 +29,18 @@ def infer_macro_cols(df: pd.DataFrame):
 
 
 def create_industry_dummies(df: pd.DataFrame, max_dummies: int = 74):
+    logger.debug(f"Creating industry dummies, max {max_dummies}")
     out = df.copy()
     counts = out["industry_code"].value_counts()
     keep = counts.index[:max_dummies].tolist()
     out["industry_code_grp"] = np.where(out["industry_code"].isin(keep), out["industry_code"], "OTHER")
     dummies = pd.get_dummies(out["industry_code_grp"], prefix="ind", dtype=float)
+    logger.debug(f"Created {len(dummies.columns)} industry dummies")
     return pd.concat([out, dummies], axis=1)
 
 
 def create_macro_interactions(df: pd.DataFrame, char_cols, macro_cols):
+    logger.debug(f"Creating macro interactions: {len(char_cols)} chars x {len(macro_cols)} macros")
     out = df.copy()
     for z in char_cols:
         for m in macro_cols:
@@ -43,6 +49,7 @@ def create_macro_interactions(df: pd.DataFrame, char_cols, macro_cols):
 
 
 def create_limited_macro_interactions(df, char_cols, macro_cols, max_interactions=12):
+    logger.debug(f"Creating limited macro interactions: {max_interactions}")
     out = df.copy()
     pairs = []
     for c in char_cols:
@@ -62,6 +69,7 @@ def _first_available(df: pd.DataFrame, candidates):
 
 
 def select_coding_features(df: pd.DataFrame, all_char_cols, macro_cols, industry_cols, config):
+    logger.debug("Selecting coding-mode features")
     required = set()
     for col in [config.ols3_size_col, config.ols3_bm_col, config.ols3_mom_col]:
         if col in df.columns:
@@ -79,10 +87,12 @@ def select_coding_features(df: pd.DataFrame, all_char_cols, macro_cols, industry
     selected_char_cols = [c for c in all_char_cols if c in required]
     selected_macro_cols = macro_cols[:config.coding_keep_macro_count]
     selected_industry_cols = industry_cols[:config.coding_keep_industry_count]
+    logger.debug(f"Selected {len(selected_char_cols)} char, {len(selected_macro_cols)} macro, {len(selected_industry_cols)} industry cols")
     return {"char_cols": selected_char_cols, "macro_cols": selected_macro_cols, "industry_cols": selected_industry_cols}
 
 
 def winsorize_by_month(df: pd.DataFrame, cols, lower=0.01, upper=0.99):
+    logger.debug(f"Winsorizing {len(cols)} columns at [{lower}, {upper}]")
     out = df.copy()
     def _clip(g):
         for c in cols:
@@ -110,6 +120,7 @@ def scale_chars_cross_sectionally_by_month(
 
     Missing values remain missing.
     """
+    logger.debug(f"Scaling {len(char_cols)} characteristics cross-sectionally")
     out = df.copy()
 
     for dt, idx in out.groupby(date_col).groups.items():
@@ -138,11 +149,13 @@ def scale_chars_cross_sectionally_by_month(
 
 
 def build_feature_panel(df: pd.DataFrame, regime_config, include_macro_interactions=True):
+    logger.info(f"Building feature panel, mode={regime_config.mode}")
     out = create_industry_dummies(df, max_dummies=74)
 
     all_char_cols = infer_characteristic_cols(out)
     macro_cols = infer_macro_cols(out)
     industry_cols = [c for c in out.columns if c.startswith("ind_")]
+    logger.debug(f"Identified {len(all_char_cols)} char, {len(macro_cols)} macro, {len(industry_cols)} industry cols")
 
     # Step 1: winsorize raw characteristics by month
     out = winsorize_by_month(out, all_char_cols, lower=0.01, upper=0.99)
@@ -186,4 +199,5 @@ def build_feature_panel(df: pd.DataFrame, regime_config, include_macro_interacti
         interaction_cols = [c for c in out.columns if "__x__" in c]
         feature_cols = all_char_cols + macro_cols + industry_cols + interaction_cols
 
+    logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
     return out, feature_cols

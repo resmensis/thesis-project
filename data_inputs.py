@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import pandas as pd
 import numpy as np
 from pandas import Timestamp
 from typing import Any
+
+logger = logging.getLogger("eap_ml.data_inputs")
 
 
 def parse_mixed_monthly_date(x: Any) -> Any:
@@ -35,12 +38,14 @@ def harmonize_monthly_dates(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
 
 
 def load_datashare(path: str) -> pd.DataFrame:
+    logger.debug(f"Loading datashare from {path}")
     df = pd.read_csv(path)
     df.columns = df.columns.str.lower()
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
     df = harmonize_monthly_dates(df, "date")
     df["permno"] = pd.to_numeric(df["permno"], errors="coerce").astype("Int64")
+    logger.debug(f"Datashare loaded: {len(df)} rows, {len(df.columns)} columns")
     return df
 
 
@@ -48,6 +53,7 @@ def load_crsp_monthly(
         path: str,
         possible_crsp_cols: list[str]
     ) -> pd.DataFrame:
+    logger.debug(f"Loading CRSP monthly data from {path}")
     df = pd.read_csv(path)
     df.columns = df.columns.str.lower()
     cols = possible_crsp_cols
@@ -60,6 +66,7 @@ def load_crsp_monthly(
             df[col] = pd.to_numeric(df[col], errors="coerce")
     df["dlret"] = df["dlret"].fillna(0.0)
     df["ret_total"] = (1.0 + df["ret"].fillna(0.0)) * (1.0 + df["dlret"]) - 1.0
+    logger.debug(f"CRSP loaded: {len(df)} rows")
     return df
 
 
@@ -67,6 +74,7 @@ def load_macro_monthly(
         path: str,
         possible_macro_cols: list[str]
     ) -> pd.DataFrame:
+    logger.debug(f"Loading macro data from {path}")
     df = pd.read_csv(path)
     df.columns = df.columns.str.lower()
     cols = possible_macro_cols
@@ -74,4 +82,5 @@ def load_macro_monthly(
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
     df = harmonize_monthly_dates(df, "date")
+    logger.debug(f"Macro loaded: {len(df)} rows, columns: {list(df.columns)}")
     return df

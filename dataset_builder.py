@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import maybe_load_parquet, save_parquet
+
+logger = logging.getLogger("eap_ml.dataset_builder")
 
 
 def get_datashare_characteristic_cols(ds: pd.DataFrame) -> list[str]:
@@ -93,18 +96,24 @@ def build_complete_dataset(
     cache_enabled: bool = True,
     force_rebuild: bool = False,    
 ):
+    logger.info(f"Building complete dataset, output: {out_path}")
+    
     if cache_enabled and not force_rebuild:
         cached = maybe_load_parquet(out_path, enabled=True)
         if cached is not None:
+            logger.info(f"Loading cached complete dataset from {out_path}")
             return cached
 
+    logger.debug("Loading source datasets")
     ds = load_datashare(datashare_path)
     crsp = load_crsp_monthly(crsp_path, possible_crsp_cols)
     macro = load_macro_monthly(macro_path, possible_marco_cols)
 
     # Columns 3-96 in datashare.csv = 94 characteristics.
     characteristic_cols = get_datashare_characteristic_cols(ds)
+    logger.debug(f"Identified {len(characteristic_cols)} characteristic columns")
 
+    logger.debug("Merging datashare with CRSP")
     merged = ds.merge(
         crsp[["permno", "date", "ret", "dlret", "ret_total"]],
         on=["permno", "date"],
@@ -112,6 +121,7 @@ def build_complete_dataset(
         validate="one_to_one",
     )
 
+    logger.debug("Merging with macro data")
     merged = merged.merge(macro, on="date", how="left")
     merged["industry_code"] = merged["sic2"].astype("string").fillna("UNK")
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
@@ -131,10 +141,12 @@ def build_complete_dataset(
         title="Missing data percentage per characteristic (before imputation)",
         bins=20,
     )
+    logger.debug(f"Saved missingness before imputation: {before_csv}, {before_jpg}")
 
     # ------------------------------------------------------------------
     # 2. Impute missing characteristics using monthly cross-sectional medians
     # ------------------------------------------------------------------
+    logger.info("Imputing missing characteristics using monthly cross-sectional medians")
     merged = impute_characteristics_by_month_cross_sectional_median(merged, characteristic_cols)
 
     # ------------------------------------------------------------------
@@ -152,19 +164,23 @@ def build_complete_dataset(
         title="Missing data percentage per characteristic (after imputation)",
         bins=20,
     )
+    logger.debug(f"Saved missingness after imputation: {after_csv}, {after_jpg}")
 
     # Build next-month excess return target after merge/imputation stage.
+    logger.debug("Building lead excess return target")
     merged["excess_ret_lead"] = merged.groupby("permno")["ret_total"].shift(-1)
 
 
     if "rf" in merged.columns:
         if merged["rf"].abs().median() > 1:
+            logger.debug("Converting rf from percentage to decimal")
             merged["rf"] = merged["rf"] / 100.0
         merged["rf_lead"] = merged.groupby("permno")["rf"].shift(-1)
         merged["excess_ret_lead"] = merged["excess_ret_lead"] - merged["rf_lead"]
 
 
     # Build shifts for monthly, quarterly and annual characteristcs
+    logger.debug("Building characteristic shifts")
     merged = merged.sort_values(["permno", "date"])
     grouped = merged.groupby("permno")
 
@@ -178,6 +194,7 @@ def build_complete_dataset(
 
 
     merged = merged.dropna(subset=["excess_ret_lead"])
+    logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)
     return merged
 
@@ -187,6 +204,7 @@ def reduce_observations_for_coding(
     max_stocks_per_month: int,
     random_state: int = 42,
 ):
+    logger.info(f"Reducing observations for coding mode: max {max_stocks_per_month} stocks per month")
     rng = np.random.RandomState(random_state)
 
     def _sample_month(g):
@@ -195,10 +213,11 @@ def reduce_observations_for_coding(
         idx = rng.choice(g.index.to_numpy(), size=max_stocks_per_month, replace=False)
         return g.loc[idx].sort_values("permno")
 
-       out = (
+    out = (
         df.groupby("date", group_keys=False)
         .apply(_sample_month)
         .sort_values(["date", "permno"])
         .reset_index(drop=True)
-        )
+    )
+    logger.info(f"Reduced dataset: {out.shape}")
     return out

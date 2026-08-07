@@ -1,9 +1,12 @@
 from __future__ import annotations
+import logging
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from io_utils import set_global_seed
+
+logger = logging.getLogger("eap_ml.models_lstm")
 
 
 class PanelSequenceDataset(Dataset):
@@ -48,6 +51,7 @@ def predictive_r2_np(y_true, y_pred):
 
 
 def train_lstm_model(train_df, val_df, feature_cols, seq_len=12, hidden_dim=64, num_layers=1, dropout=0.0, lr=1e-3, batch_size=1024, epochs=20, device=None, random_state=42):
+    logger.info(f"Training LSTM: seq_len={seq_len}, hidden={hidden_dim}, layers={num_layers}")
     set_global_seed(random_state=random_state, torch_deterministic=True)
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     train_ds = PanelSequenceDataset(train_df, feature_cols, seq_len=seq_len)
@@ -61,7 +65,7 @@ def train_lstm_model(train_df, val_df, feature_cols, seq_len=12, hidden_dim=64, 
     loss_fn = nn.MSELoss()
     best_state = None
     best_val_r2 = -np.inf
-    for _ in range(epochs):
+    for epoch in range(epochs):
         model.train()
         for Xb, yb, _, _ in train_loader:
             Xb = Xb.to(device)
@@ -87,10 +91,12 @@ def train_lstm_model(train_df, val_df, feature_cols, seq_len=12, hidden_dim=64, 
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
     if best_state is not None:
         model.load_state_dict(best_state)
+    logger.info(f"LSTM training completed, best val R2: {best_val_r2:.4f}")
     return {"model": model, "val_r2": best_val_r2}
 
 
 def tune_lstm_models(train_df, val_df, feature_cols, param_grid, random_state=42):
+    logger.info("Tuning LSTM models")
     best = {"model": None, "val_r2": -np.inf, "params": None}
     for seq_len in param_grid["seq_len"]:
         for hidden_dim in param_grid["hidden_dim"]:
@@ -100,4 +106,5 @@ def tune_lstm_models(train_df, val_df, feature_cols, param_grid, random_state=42
                         res = train_lstm_model(train_df=train_df, val_df=val_df, feature_cols=feature_cols, seq_len=seq_len, hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout, lr=lr, batch_size=param_grid.get("batch_size", 1024), epochs=param_grid.get("epochs", 20), random_state=random_state)
                         if res["val_r2"] > best["val_r2"]:
                             best = {"model": res["model"], "val_r2": res["val_r2"], "params": {"seq_len": seq_len, "hidden_dim": hidden_dim, "num_layers": num_layers, "dropout": dropout, "lr": lr}}
+    logger.info(f"Best LSTM val R2: {best['val_r2']:.4f}, params: {best['params']}")
     return best

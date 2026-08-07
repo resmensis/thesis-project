@@ -1,6 +1,9 @@
 from __future__ import annotations
+import logging
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger("eap_ml.evaluation")
 
 
 def predictive_r2(y_true, y_pred):
@@ -61,6 +64,7 @@ def build_decile_portfolios(predictions, returns, weights, dates, n_bins=10):
 
 
 def evaluate_all_models(models_dict, data_dict):
+    logger.info(f"Evaluating {len(models_dict)} models")
     X_test = data_dict["X_test"]
     y_test = data_dict["y_test"]
     meta_test = data_dict["meta_test"]
@@ -78,6 +82,7 @@ def evaluate_all_models(models_dict, data_dict):
         stock_rows.append({"model": name, "stock_r2": stock_r2})
         portfolio_rows.append({"model": name, "portfolio_r2": port_r2})
         sharpe_rows.append({"model": name, "timing_sharpe": timing_sharpe, "decile_ls_ew_sharpe": ew_sharpe, "decile_ls_vw_sharpe": vw_sharpe})
+    logger.info("Model evaluation completed")
     return {
         "stock_level": pd.DataFrame(stock_rows).sort_values("stock_r2", ascending=False),
         "portfolio_level": pd.DataFrame(portfolio_rows).sort_values("portfolio_r2", ascending=False),

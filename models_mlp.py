@@ -1,6 +1,9 @@
 from __future__ import annotations
+import logging
 import numpy as np
 from sklearn.neural_network import MLPRegressor
+
+logger = logging.getLogger("eap_ml.models_mlp")
 
 
 def predictive_r2(y_true, y_pred):
@@ -12,6 +15,7 @@ def predictive_r2(y_true, y_pred):
 
 
 def fit_mlp_model(X_train, y_train, X_val, y_val, arch_params, random_state=42):
+    logger.debug(f"Fitting MLP: {arch_params}")
     model = MLPRegressor(
         hidden_layer_sizes=arch_params.get("hidden_layer_sizes", (64,64,64)),
         activation=arch_params.get("activation", "relu"),
@@ -25,10 +29,12 @@ def fit_mlp_model(X_train, y_train, X_val, y_val, arch_params, random_state=42):
     )
     model.fit(X_train, y_train)
     val_r2 = predictive_r2(y_val, model.predict(X_val))
+    logger.debug(f"MLP val R2: {val_r2:.4f}")
     return {"model": model, "val_r2": val_r2, "params": arch_params}
 
 
 def tune_mlp_models(X_train, y_train, X_val, y_val, depths=(1,2,3,4,5), widths=(32,64,128), activations=("relu","tanh"), alpha_grid=(1e-5,1e-4,1e-3), learning_rate_grid=(1e-3,5e-4), max_iter=300, random_state=42):
+    logger.info("Tuning MLP models")
     best = {"model": None, "val_r2": -np.inf, "params": None}
     for depth in depths:
         for width in widths:
@@ -45,4 +51,5 @@ def tune_mlp_models(X_train, y_train, X_val, y_val, depths=(1,2,3,4,5), widths=(
                         res = fit_mlp_model(X_train, y_train, X_val, y_val, arch, random_state=random_state)
                         if res["val_r2"] > best["val_r2"]:
                             best = res
+    logger.info(f"Best MLP val R2: {best['val_r2']:.4f}, params: {best['params']}")
     return best
