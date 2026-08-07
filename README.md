@@ -1,32 +1,265 @@
-# empirical_asset_pricing_ml
+# Thesis Project: Asset Pricing with Machine Learning
 
-Updated replication package scaffold for Gu, Kelly, and Xiu (2020).
+A replication of Gu, Kelly, and Xiu (2020) - "Empirical Asset Pricing via Machine Learning"
 
-## Included updates
-- Modular architecture with cached intermediate products.
-- Uses `datashare.csv`, `crsp_monthly.csv`, and `Data2024_monthly_goyal.csv`.
-- Harmonizes heterogeneous monthly dates to month-end.
-- Supports original sample and extended sample through 2021-12-31.
-- Adds coding mode that reduces characteristics, interactions, industry dummies, and observations, but preserves the timeframe and keeps OLS-3 variables plus at least one monthly, quarterly, and annual characteristic.
-- Sets `random_state = 42` across the project.
-- Includes LSTM support via PyTorch.
-- Provides base and extended hyperparameter grids.
+## Overview
 
-## Setup
-Install dependencies:
+This project implements an expanding window forecasting framework for asset pricing using various machine learning algorithms. The code replicates the methodology from the seminal paper while providing flexibility for experimentation.
+
+## Key Features
+
+- **Expanding Window Forecasting**: Annual model refitting with expanding training windows
+- **Multiple Models**: OLS, Huber Regression, PCR, PLS, Gradient Boosting, Random Forest, MLP
+- **Feature Engineering**: 94 stock characteristics, industry dummies, macro interactions
+- **Cross-Sectional Scaling**: Quantile-based normalization of characteristics
+- **Caching**: Parquet-based caching for datasets and feature panels
+- **Comprehensive Logging**: Detailed logging with per-module identification
+
+## Installation
+
+### Prerequisites
+
+- Python 3.9+
+- pip or conda
+
+### Install Dependencies
 
 ```bash
-pip install pandas numpy scikit-learn matplotlib jupyter torch
+# Core dependencies
+pip install pandas numpy scikit-learn matplotlib torch
+
+# Parquet support (REQUIRED)
+pip install pyarrow
+
+# Optional: fastparquet alternative
+pip install fastparquet
 ```
 
-## Main entry point
-Run:
+## Project Structure
 
+```
+thesis-project/
+├── config.py              # Configuration dataclasses
+├── data_inputs.py         # Data loading functions
+├── dataset_builder.py     # Dataset construction and imputation
+├── features.py            # Feature engineering and scaling
+├── sample_splits.py       # Time-based data splitting
+├── models_linear.py       # Linear models (OLS, Huber, PCR, PLS)
+├── models_trees.py        # Tree models (GBRT, Random Forest)
+├── models_mlp.py          # Neural networks (MLP)
+├── models_lstm.py         # LSTM models (optional)
+├── evaluation.py          # Evaluation metrics
+├── expanding_window.py    # Expanding window logic
+├── run_experiments.py     # Main entry point
+├── io_utils.py            # I/O utilities and logging
+└── README.md              # This file
+```
+
+## Usage
+
+### Quick Start
+
+```bash
+# Run the full experiment (all models, 1987-2021)
+python run_experiments.py
+```
+
+### Configuration
+
+Edit `config.py` to customize:
+
+- **DataRegimeConfig**: `mode="full"` or `mode="coding"`
+- **ExpandingWindowConfig**: Time periods and refitting frequency
+- **CacheConfig**: Enable/disable caching
+- **HyperGridConfig**: Hyperparameter grids for model tuning
+
+### Running OLS-3 Only
+
+To run only the 3-factor OLS benchmark (faster execution):
+
+1. Edit `run_experiments.py`:
+```python
+models_to_run = ["OLS_3"]  # Run only OLS-3
+```
+
+2. Run:
 ```bash
 python run_experiments.py
 ```
 
-## Important adaptation notes
-- Adjust characteristic column names in `config.py`, especially the OLS-3 columns.
-- Confirm which macro columns exist in `Data2024_monthly_goyal.csv`.
-- Install required packages: pandas, numpy, scikit-learn, matplotlib, pyarrow, torch.
+### Running Modes
+
+#### Full Mode (Default)
+- Uses all 94 characteristics
+- Creates all macro interactions (94 × 8 = 752 interaction terms)
+- Full industry dummies (up to 74)
+
+#### Coding Mode
+- Subsampled data (500 stocks/month by default)
+- Reduced feature set for faster iteration
+- Limited macro interactions (12 by default)
+
+Change mode in `config.py`:
+```python
+regime_cfg = DataRegimeConfig(mode="coding")
+```
+
+## Data Requirements
+
+### Input Files
+
+Place these files in the `data/` directory:
+
+1. **datashare.csv**: 94 stock characteristics
+   - Column 1: `permno` (stock identifier)
+   - Column 2: `date`
+   - Columns 3-96: 94 characteristics
+   - Column 97: `sic2` (2-digit SIC code)
+
+2. **crsp_monthly.csv**: CRSP monthly returns
+   - Required columns: `permno`, `date`, `ret`, `dlret`
+
+3. **Data2024_monthly_goyal.csv**: Macro predictors
+   - Standard Goyal and Welch predictors
+
+### Data Format
+
+All dates should be in monthly format (YYYYMM or date strings). The code handles mixed date formats automatically.
+
+## Expanding Window Methodology
+
+### Timeline
+
+```
+Training:  1957───────────────────────────────────────────→ (expands yearly)
+Validation:          1975────────────────────────────→ (rolls forward, 12 years)
+Test:                    1987 1988 1989 ... 2016 ... 2021 (forecast yearly)
+```
+
+### Annual Refitting Process
+
+For each forecast year Y (1987 to 2021):
+
+1. **Training Period**: 1957 to (1974 + Y - 1987)
+   - Example: For Y=1987, train on 1957-1974 (18 years)
+   - Example: For Y=1988, train on 1957-1975 (19 years)
+   - Expands by 1 year each iteration
+
+2. **Validation Period**: 12 years ending at (1986 + Y - 1987)
+   - Example: For Y=1987, validate on 1975-1986
+   - Example: For Y=1988, validate on 1976-1987
+   - Rolls forward, always 12 years
+
+3. **Forecast Period**: 12 months of year Y
+   - Generate predictions for all stocks
+   - Evaluate performance
+
+4. **Refit**: Increment year and repeat
+
+### Timeframes
+
+- **Original**: 1987-2016 (30 years)
+- **Extended**: 1987-2021 (35 years)
+
+The code runs continuously from 1987-2021 and saves intermediate evaluations at 2016.
+
+## Output
+
+### Directory Structure
+
+```
+output/
+└── unified/
+    ├── all_predictions.parquet      # All predictions 1987-2021
+    ├── metrics_by_year.csv          # Full metrics (1987-2021)
+    ├── metrics_by_year_original.csv # Intermediate metrics (1987-2016)
+    ├── predictions_year_1987.parquet
+    ├── predictions_year_1988.parquet
+    ├── ...
+    ├── models_year_1987.pkl
+    ├── models_year_1988.pkl
+    └── ...
+```
+
+### Metrics
+
+For each model and year:
+
+- `stock_r2`: Stock-level predictive R2
+- `portfolio_r2`: Portfolio-level predictive R2
+- `timing_sharpe`: Market timing strategy Sharpe ratio
+
+### Cache
+
+```
+cache/
+├── complete_dataset.parquet              # Merged dataset
+├── complete_dataset_missingness_before.jpg  # Missingness visualization
+├── complete_dataset_missingness_after.jpg   # After imputation
+├── complete_dataset_missingness_comparison.jpg  # Before vs after
+├── feature_panel_full.parquet          # Feature panel (full mode)
+├── feature_panel_coding.parquet        # Feature panel (coding mode)
+├── feature_cols_full.pkl               # Feature column names
+└── feature_cols_coding.pkl
+```
+
+## Models
+
+### Linear Models
+
+- **OLS_3**: 3-factor benchmark (size, value, momentum)
+- **OLS_full**: Full information OLS (all features)
+- **Huber**: Robust regression with Huber loss
+- **PCR**: Principal Component Regression
+- **PLS**: Partial Least Squares
+
+### Tree Models
+
+- **GBRT**: Gradient Boosted Regression Trees
+- **RandomForest**: Random Forest
+
+### Neural Networks
+
+- **MLP**: Multi-Layer Perceptron
+
+## Feature Engineering
+
+### Preprocessing Steps
+
+1. **Winsorization**: 1st and 99th percentiles by month
+2. **Cross-Sectional Scaling**: QuantileTransformer to [-1, 1]
+3. **Industry Dummies**: Top 74 SIC2 industries
+4. **Macro Interactions**: Characteristic × macro variable
+
+### Feature Sets
+
+- **Full Mode**: 94 characteristics + 8 macro + 74 industry + 752 interactions = 928 features
+- **Coding Mode**: Reduced subset (configurable)
+
+## Logging
+
+Logs are saved to `logs/eap_ml_{mode}_{timestamp}.log` with:
+
+- Timestamp
+- Log level (INFO/DEBUG)
+- Module name (e.g., `eap_ml.dataset_builder`)
+- Message
+
+### Log Levels
+
+- **INFO**: Major milestones, dataset shapes, model performance
+- **DEBUG**: Detailed operations, parameter values, intermediate steps
+
+## Reproducibility
+
+- **Random Seed**: Set globally to 42 at the start
+- **Torch Deterministic**: Enabled by default
+- **Caching**: Ensures identical results across runs
+
+## Citation
+
+Gu, S., Kelly, B., & Xiu, D. (2020). Empirical Asset Pricing via Machine Learning. *The Review of Financial Studies*, 33(5), 2223-2273.
+
+## License
+
+This project is for academic research purposes.

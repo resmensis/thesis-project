@@ -39,6 +39,7 @@ def main():
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
 
+    # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)
 
     logger, log_path = setup_project_logger(
@@ -123,35 +124,39 @@ def main():
     # ------------------------------------------------------------------
     logger.info("Starting expanding window forecasting.")
     
-    windows = {}
-    if tf_cfg.run_original_window:
-        windows["original"] = tf_cfg.original_end_date
-    if tf_cfg.run_extended_window:
-        windows["extended_2021"] = tf_cfg.extended_end_date
-
-    all_predictions = {}
-    all_metrics = {}
+    # Determine which models to run
+    # Use models_to_run=["OLS_3"] to run only OLS-3 benchmark
+    models_to_run = None  # None = run all models
     
-    for window_name, end_date in windows.items():
-        logger.info(f"Running expanding window: {window_name} (until {end_date})")
-        
-        predictions, metrics = run_expanding_window(
-            feature_panel=feature_panel,
-            feature_cols=feature_cols,
-            regime_config=regime_cfg,
-            grid_config=grid_cfg,
-            repro_config=repro_cfg,
-            cache_config=cache_cfg,
-            expand_config=expand_cfg,
-            window_name=window_name,
-            output_dir="output",
-        )
-        
-        all_predictions[window_name] = predictions
-        all_metrics[window_name] = metrics
+    # IMPORTANT: Run both timeframes in ONE continuous execution
+    # The random seed is set globally above, ensuring reproducibility
+    # We run to extended end (2021) and evaluate at both 2016 and 2021
     
-    logger.info("All expanding window runs completed.")
-    logger.info(f"Total predictions: {sum(len(df) for df in all_predictions.values())}")
+    # Single unified run - evaluates at both original (2016) and extended (2021)
+    logger.info("Running unified expanding window (1987-2021) with evaluation at 2016 and 2021")
+    
+    predictions, metrics = run_expanding_window(
+        feature_panel=feature_panel,
+        feature_cols=feature_cols,
+        regime_config=regime_cfg,
+        grid_config=grid_cfg,
+        repro_config=repro_cfg,
+        cache_config=cache_cfg,
+        expand_config=expand_cfg,
+        window_name="unified",  # Single unified window
+        output_dir="output",
+        models_to_run=models_to_run,
+        evaluate_at_original=True,  # Save intermediate evaluation at 2016
+    )
+    
+    logger.info("Expanding window completed.")
+    logger.info(f"Total predictions: {len(predictions)}")
+    logger.info(f"Metrics by year: {len(metrics)} rows")
+    
+    # Results are saved to:
+    # - output/unified/all_predictions.parquet
+    # - output/unified/metrics_by_year.csv (full 1987-2021)
+    # - output/unified/metrics_by_year_original.csv (1987-2016 only)
 
 
 if __name__ == "__main__":

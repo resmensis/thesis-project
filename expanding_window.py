@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
 from sample_splits import subset_timeframe
@@ -81,9 +81,14 @@ def train_models_for_year(
     grid_config: HyperGridConfig,
     repro_config: ReproducibilityConfig,
     year: int,
+    models_to_run: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Train all models for a given year using expanded training data.
+    Train models for a given year using expanded training data.
+    
+    Args:
+        models_to_run: List of model names to train. If None, run all models.
+                      Use ["OLS_3"] for OLS-3 only.
     """
     logger.info(f"Year {year}: Training models on {len(train_df)} samples")
     
@@ -98,31 +103,42 @@ def train_models_for_year(
     
     models = {}
     
+    # Determine which models to run
+    if models_to_run is None:
+        # Run all models (default)
+        run_all = True
+    elif isinstance(models_to_run, list) and len(models_to_run) == 1 and models_to_run[0] == "OLS_3":
+        run_all = False
+    else:
+        run_all = False
+    
     # Benchmark OLS with 3 factors
     benchmark_features = [c for c in [regime_config.ols3_size_col, regime_config.ols3_bm_col, regime_config.ols3_mom_col] if c in X_train_s.columns]
     if len(benchmark_features) == 3:
-        models["OLS_3"] = fit_pooled_ols(X_train_s[benchmark_features], y_train)
+        if run_all or "OLS_3" in (models_to_run or []):
+            models["OLS_3"] = fit_pooled_ols(X_train_s[benchmark_features], y_train)
     
-    # Full OLS
-    models["OLS_full"] = fit_pooled_ols(X_train_s, y_train)
-    
-    # Huber
-    models["Huber"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
-    
-    # PCR
-    models["PCR"] = tune_pcr(X_train_s, y_train, X_val_s, y_val)["model"]
-    
-    # PLS
-    models["PLS"] = tune_pls(X_train_s, y_train, X_val_s, y_val)["model"]
-    
-    # Tree models
-    rf_grid = grid_config.rf_extended if grid_config.use_extended_grids else grid_config.rf_base
-    gbrt_grid = grid_config.gbrt_extended if grid_config.use_extended_grids else grid_config.gbrt_base
-    mlp_grid = grid_config.mlp_extended if grid_config.use_extended_grids else grid_config.mlp_base
-    
-    models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
-    models["RandomForest"] = tune_random_forest(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **rf_grid)["model"]
-    models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_config.random_state, **mlp_grid)["model"]
+    if run_all:
+        # Full OLS
+        models["OLS_full"] = fit_pooled_ols(X_train_s, y_train)
+        
+        # Huber
+        models["Huber"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
+        
+        # PCR
+        models["PCR"] = tune_pcr(X_train_s, y_train, X_val_s, y_val)["model"]
+        
+        # PLS
+        models["PLS"] = tune_pls(X_train_s, y_train, X_val_s, y_val)["model"]
+        
+        # Tree models
+        rf_grid = grid_config.rf_extended if grid_config.use_extended_grids else grid_config.rf_base
+        gbrt_grid = grid_config.gbrt_extended if grid_config.use_extended_grids else grid_config.gbrt_base
+        mlp_grid = grid_config.mlp_extended if grid_config.use_extended_grids else grid_config.mlp_base
+        
+        models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
+        models["RandomForest"] = tune_random_forest(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **rf_grid)["model"]
+        models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_config.random_state, **mlp_grid)["model"]
     
     logger.info(f"Year {year}: Trained {len(models)} models")
     return models
@@ -171,9 +187,15 @@ def run_expanding_window(
     expand_config: ExpandingWindowConfig,
     window_name: str,
     output_dir: str,
+    models_to_run: Optional[List[str]] = None,
+    evaluate_at_original: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Run expanding window forecasting with annual refitting.
+    
+    Args:
+        models_to_run: List of model names to run. Use ["OLS_3"] for OLS-3 only.
+        evaluate_at_original: If True, save intermediate evaluation at test_end_year_original.
     
     Returns:
     - all_predictions: DataFrame with all predictions
@@ -181,12 +203,8 @@ def run_expanding_window(
     """
     logger.info(f"Starting expanding window forecasting: {window_name}")
     
-    # Determine test end year
-    test_end_year = (
-        expand_config.test_end_year_extended 
-        if "extended" in window_name.lower() 
-        else expand_config.test_end_year_original
-    )
+    # Determine test end year - ALWAYS run to extended end for continuity
+    test_end_year = expand_config.test_end_year_extended
     
     # Generate yearly splits
     yearly_splits = get_yearly_splits(
@@ -220,7 +238,8 @@ def run_expanding_window(
         # Train models
         models = train_models_for_year(
             train_df, val_df, feature_cols,
-            regime_config, grid_config, repro_config, year
+            regime_config, grid_config, repro_config, year,
+            models_to_run=models_to_run,
         )
         
         # Generate predictions
@@ -273,6 +292,12 @@ def run_expanding_window(
         models_path = outdir / f"models_year_{year}.pkl"
         save_pickle(models, models_path, enabled=cache_config.enabled)
         logger.debug(f"Saved models to {models_path}")
+        
+        # Save intermediate evaluation at original end year
+        if evaluate_at_original and year == expand_config.test_end_year_original:
+            logger.info(f"Reached original end year {year}, saving intermediate evaluation")
+            metrics_original_path = outdir / "metrics_by_year_original.csv"
+            pd.DataFrame(year_metrics).to_csv(metrics_original_path, index=False)
     
     # Concatenate all predictions
     all_predictions_df = pd.concat(all_predictions, ignore_index=True)
