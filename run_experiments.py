@@ -14,13 +14,14 @@ from config import (
     CharacteristicsFrequency,
     LoggingConfig,
     ExpandingWindowConfig,
+    ModelSelectionConfig,
 )
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
 from dataset_builder import build_complete_dataset, reduce_observations_for_coding
 from sample_splits import subset_timeframe, chronological_split
 from features import build_feature_panel
-from models_linear import fit_pooled_ols, tune_huber_regression, tune_pcr, tune_pls
+from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from expanding_window import run_expanding_window
@@ -38,6 +39,7 @@ def main():
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
+    model_cfg = ModelSelectionConfig()
 
     # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)
@@ -57,6 +59,17 @@ def main():
     logger.info(f"Random seed: {repro_cfg.random_state}")
     logger.info(f"Cache dir: {cache_cfg.cache_dir}")
     logger.info(f"Data regime: {regime_cfg.mode}")
+    
+    # Log model selection configuration
+    if model_cfg.run_all_models:
+        logger.info("Model selection: Running ALL models (including LSTM)")
+        models_to_run = None  # None signals to run all models
+    elif model_cfg.models_to_run is not None:
+        logger.info(f"Model selection: Running custom subset: {model_cfg.models_to_run}")
+        models_to_run = model_cfg.models_to_run
+    else:
+        logger.info("Model selection: Running default (all models)")
+        models_to_run = None
 
     ensure_dir("output")
     ensure_dir(cache_cfg.cache_dir)
@@ -124,10 +137,6 @@ def main():
     # ------------------------------------------------------------------
     logger.info("Starting expanding window forecasting.")
     
-    # Determine which models to run
-    # Use models_to_run=["OLS_3"] to run only OLS-3 benchmark
-    models_to_run = None  # None = run all models
-    
     # IMPORTANT: Run both timeframes in ONE continuous execution
     # The random seed is set globally above, ensuring reproducibility
     # We run to extended end (2021) and evaluate at both 2016 and 2021
@@ -145,7 +154,7 @@ def main():
         expand_config=expand_cfg,
         window_name="unified",  # Single unified window
         output_dir="output",
-        models_to_run=models_to_run,
+        models_to_run=models_to_run,  # Determined by ModelSelectionConfig
         evaluate_at_original=True,  # Save intermediate evaluation at 2016
     )
     

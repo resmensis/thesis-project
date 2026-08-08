@@ -203,3 +203,30 @@ class ExpandingWindowConfig:
     test_end_year_original: int = 2016
     test_end_year_extended: int = 2021
     refit_frequency_years: int = 1
+
+
+@dataclass
+class ModelSelectionConfig:
+    """
+    Configuration for which models to run in the expanding window.
+    
+    Gu et al. (2020) model specifications:
+    - OLS_3: HuberRegressor with 3 factors (size, value, momentum)
+    - OLS_full: HuberRegressor with all features
+    - Huber: HuberRegressor with tuned hyperparameters
+    - PCR: Principal Component Regression
+    - PLS: Partial Least Squares
+    - GBRT: Gradient Boosted Regression Trees
+    - RandomForest: Random Forest
+    - MLP: Multi-Layer Perceptron
+    - LSTM: Long Short-Term Memory (only when run_all_models=True)
+    
+    Usage:
+    - Run only OLS-3 benchmark: models_to_run = ["OLS_3"]
+    - Run all models: run_all_models = True (models_to_run will be ignored)
+    - Run custom subset: models_to_run = ["OLS_3", "GBRT", "MLP"]
+    """
+    run_all_models: bool = True  # If True, run all models (including LSTM)
+    models_to_run: Optional[List[str]] = None  # Custom model selection (ignored if run_all_models=True)
+    # Example: models_to_run = ["OLS_3"]  # Only OLS-3 benchmark
+    # Example: models_to_run = ["OLS_3", "GBRT", "MLP"]  # Custom subset
