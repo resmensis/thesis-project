@@ -1,6 +1,23 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+"""
+Config guide for a full run:
+1. check path to files in DataFilesConfig:
+    datashare_path: str = 
+    crsp_monthly_path: str = 
+    macro_path: str = 
+2. these varibles need a specific values:
+    a. RunControlConfig:
+        dataset_creation_only: bool = False
+    b. DataRegimeConfig:
+        mode: str = "full"
+    c. ModelSelectionConfig:
+        run_all_models: bool = True
+3.
+
+"""
+
 
 @dataclass
 class ReproducibilityConfig:
