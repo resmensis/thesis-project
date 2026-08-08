@@ -243,7 +243,7 @@ class ModelSelectionConfig:
     - Run all models: run_all_models = True (models_to_run will be ignored)
     - Run custom subset: models_to_run = ["OLS_3", "GBRT", "MLP"]
     """
-    run_all_models: bool = False  # If True, run all models (including LSTM)
+    run_all_models: bool = True  # If True, run all models (including LSTM)
     models_to_run: Optional[List[str]] = ["OLS_3"]  # Custom model selection (ignored if run_all_models=True)
     # Default: models_to_run = None
     # Example: models_to_run = ["OLS_3"]  # Only OLS-3 benchmark
