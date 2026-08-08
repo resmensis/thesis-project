@@ -7,9 +7,10 @@ from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
 from sample_splits import subset_timeframe
-from models_linear import fit_pooled_ols, tune_huber_regression, tune_pcr, tune_pls
+from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
+from models_lstm import tune_lstm_models
 from io_utils import ensure_dir, save_parquet, maybe_load_parquet, save_pickle, maybe_load_pickle
 
 logger = logging.getLogger("eap_ml.expanding_window")
@@ -86,6 +87,16 @@ def train_models_for_year(
     """
     Train models for a given year using expanded training data.
     
+    Gu et al. (2020) model specifications:
+    - OLS_3: HuberRegressor with 3 factors (size, value, momentum)
+    - OLS_full: HuberRegressor with all features
+    - PCR: PCA + HuberRegressor
+    - PLS: PLSRegression
+    - GBRT: GradientBoostingRegressor
+    - RF: RandomForestRegressor
+    - MLP: MLPRegressor
+    - LSTM: LSTM (only when run_all=True)
+    
     Args:
         models_to_run: List of model names to train. If None, run all models.
                       Use ["OLS_3"] for OLS-3 only.
@@ -112,35 +123,59 @@ def train_models_for_year(
     else:
         run_all = False
     
-    # Benchmark OLS with 3 factors
+    # Benchmark: OLS-3 with 3 factors (Gu et al. 2020 use Huber, not LinearRegression)
     benchmark_features = [c for c in [regime_config.ols3_size_col, regime_config.ols3_bm_col, regime_config.ols3_mom_col] if c in X_train_s.columns]
     if len(benchmark_features) == 3:
         if run_all or "OLS_3" in (models_to_run or []):
-            models["OLS_3"] = fit_pooled_ols(X_train_s[benchmark_features], y_train)
+            logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
+            models["OLS_3"] = fit_pooled_huber_3(X_train_s[benchmark_features], y_train)
     
     if run_all:
-        # Full OLS
-        models["OLS_full"] = fit_pooled_ols(X_train_s, y_train)
+        # OLS-full: HuberRegressor with all features (Gu et al. 2020)
+        logger.debug("Training OLS_full (Huber) with all features")
+        models["OLS_full"] = fit_pooled_huber_full(X_train_s, y_train)
         
-        # Huber
+        # Huber regression (same as OLS_full, kept for clarity)
+        logger.debug("Training Huber regression")
         models["Huber"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
         
-        # PCR
+        # PCR: PCA + HuberRegressor
+        logger.debug("Training PCR")
         models["PCR"] = tune_pcr(X_train_s, y_train, X_val_s, y_val)["model"]
         
-        # PLS
+        # PLS: PLSRegression
+        logger.debug("Training PLS")
         models["PLS"] = tune_pls(X_train_s, y_train, X_val_s, y_val)["model"]
         
         # Tree models
         rf_grid = grid_config.rf_extended if grid_config.use_extended_grids else grid_config.rf_base
         gbrt_grid = grid_config.gbrt_extended if grid_config.use_extended_grids else grid_config.gbrt_base
         mlp_grid = grid_config.mlp_extended if grid_config.use_extended_grids else grid_config.mlp_base
+        lstm_grid = grid_config.lstm_extended if grid_config.use_extended_grids else grid_config.lstm_base
         
+        logger.debug("Training GBRT")
         models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
+        
+        logger.debug("Training Random Forest")
         models["RandomForest"] = tune_random_forest(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **rf_grid)["model"]
+        
+        logger.debug("Training MLP")
         models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_config.random_state, **mlp_grid)["model"]
+        
+        # LSTM: Only when running all models (computationally expensive)
+        logger.debug("Training LSTM")
+        try:
+            models["LSTM"] = tune_lstm_models(
+                train_df=train_df, 
+                val_df=val_df, 
+                feature_cols=feature_cols, 
+                param_grid=lstm_grid, 
+                random_state=repro_config.random_state
+            )["model"]
+        except Exception as e:
+            logger.warning(f"LSTM training failed: {e}. Skipping LSTM for year {year}.")
     
-    logger.info(f"Year {year}: Trained {len(models)} models")
+    logger.info(f"Year {year}: Trained {len(models)} models: {list(models.keys())}")
     return models
 
 
