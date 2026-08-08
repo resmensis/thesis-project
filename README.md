@@ -9,7 +9,8 @@ This project implements an expanding window forecasting framework for asset pric
 ## Key Features
 
 - **Expanding Window Forecasting**: Annual model refitting with expanding training windows
-- **Multiple Models**: OLS, Huber Regression, PCR, PLS, Gradient Boosting, Random Forest, MLP
+- **Gu et al. (2020) Models**: All models use HuberRegressor as specified in the paper
+- **Complete Model Ensemble**: OLS, PCR, PLS, GBRT, Random Forest, MLP, **LSTM**
 - **Feature Engineering**: 94 stock characteristics, industry dummies, macro interactions
 - **Cross-Sectional Scaling**: Quantile-based normalization of characteristics
 - **Caching**: Parquet-based caching for datasets and feature panels
@@ -39,15 +40,15 @@ pip install fastparquet
 
 ```
 thesis-project/
-├── config.py              # Configuration dataclasses
+├── config.py              # Configuration dataclasses (including ModelSelectionConfig)
 ├── data_inputs.py         # Data loading functions
 ├── dataset_builder.py     # Dataset construction and imputation
 ├── features.py            # Feature engineering and scaling
 ├── sample_splits.py       # Time-based data splitting
-├── models_linear.py       # Linear models (OLS, Huber, PCR, PLS)
+├── models_linear.py       # Linear models (HuberRegressor, PCR, PLS)
 ├── models_trees.py        # Tree models (GBRT, Random Forest)
 ├── models_mlp.py          # Neural networks (MLP)
-├── models_lstm.py         # LSTM models (optional)
+├── models_lstm.py         # LSTM models
 ├── evaluation.py          # Evaluation metrics
 ├── expanding_window.py    # Expanding window logic
 ├── run_experiments.py     # Main entry point
@@ -60,7 +61,7 @@ thesis-project/
 ### Quick Start
 
 ```bash
-# Run the full experiment (all models, 1987-2021)
+# Run the full experiment (all models including LSTM, 1987-2021)
 python run_experiments.py
 ```
 
@@ -70,21 +71,26 @@ Edit `config.py` to customize:
 
 - **DataRegimeConfig**: `mode="full"` or `mode="coding"`
 - **ExpandingWindowConfig**: Time periods and refitting frequency
+- **ModelSelectionConfig**: Which models to run
 - **CacheConfig**: Enable/disable caching
 - **HyperGridConfig**: Hyperparameter grids for model tuning
 
-### Running OLS-3 Only
+### Model Selection
 
-To run only the 3-factor OLS benchmark (faster execution):
+Control which models to run in `config.py`:
 
-1. Edit `run_experiments.py`:
 ```python
-models_to_run = ["OLS_3"]  # Run only OLS-3
-```
+# Run all models (including LSTM) - default
+run_all_models = True
+models_to_run = None
 
-2. Run:
-```bash
-python run_experiments.py
+# Run only OLS-3 benchmark (fastest)
+run_all_models = False
+models_to_run = ["OLS_3"]
+
+# Run custom subset
+run_all_models = False
+models_to_run = ["OLS_3", "GBRT", "MLP"]
 ```
 
 ### Running Modes
@@ -203,15 +209,17 @@ cache/
 └── feature_cols_coding.pkl
 ```
 
-## Models
+## Models (Gu et al. 2020 Specifications)
 
-### Linear Models
+### Linear Models (All use HuberRegressor)
 
-- **OLS_3**: 3-factor benchmark (size, value, momentum)
-- **OLS_full**: Full information OLS (all features)
-- **Huber**: Robust regression with Huber loss
-- **PCR**: Principal Component Regression
-- **PLS**: Partial Least Squares
+**Important:** Gu et al. (2020) use Huber robust regression for all "OLS" models, not standard OLS.
+
+- **OLS_3**: HuberRegressor with 3 factors (size, value, momentum) - benchmark model
+- **OLS_full**: HuberRegressor with all features
+- **Huber**: HuberRegressor with tuned hyperparameters (epsilon, alpha)
+- **PCR**: Principal Component Regression (PCA + HuberRegressor)
+- **PLS**: Partial Least Squares regression
 
 ### Tree Models
 
@@ -220,21 +228,28 @@ cache/
 
 ### Neural Networks
 
-- **MLP**: Multi-Layer Perceptron
+- **MLP**: Multi-Layer Perceptron (feedforward neural network)
+- **LSTM**: Long Short-Term Memory (recurrent neural network, runs only when `run_all_models=True`)
 
 ## Feature Engineering
 
 ### Preprocessing Steps
 
 1. **Winsorization**: 1st and 99th percentiles by month
-2. **Cross-Sectional Scaling**: QuantileTransformer to [-1, 1]
+2. **Cross-Sectional Scaling**: QuantileTransformer to [-1, 1] (only 94 characteristics)
 3. **Industry Dummies**: Top 74 SIC2 industries
 4. **Macro Interactions**: Characteristic × macro variable
 
 ### Feature Sets
 
-- **Full Mode**: 94 characteristics + 8 macro + 74 industry + 752 interactions = 928 features
+- **Full Mode**: 94 characteristics + 8 macro + 74 industry + 752 interactions = ~928 features
 - **Coding Mode**: Reduced subset (configurable)
+
+### Important Notes
+
+- **Macro variables are NOT included in feature_cols** (removed to follow original paper)
+- **Only the 94 characteristics are scaled** to [-1, 1]
+- **Macro interactions are created AFTER scaling**
 
 ## Logging
 
@@ -242,7 +257,7 @@ Logs are saved to `logs/eap_ml_{mode}_{timestamp}.log` with:
 
 - Timestamp
 - Log level (INFO/DEBUG)
-- Module name (e.g., `eap_ml.dataset_builder`)
+- Module name (e.g., `eap_ml.dataset_builder`, `eap_ml.models_linear`)
 - Message
 
 ### Log Levels
@@ -255,6 +270,7 @@ Logs are saved to `logs/eap_ml_{mode}_{timestamp}.log` with:
 - **Random Seed**: Set globally to 42 at the start
 - **Torch Deterministic**: Enabled by default
 - **Caching**: Ensures identical results across runs
+- **Unified Timeframe**: Runs 1987-2021 continuously (not separate runs)
 
 ## Citation
 
