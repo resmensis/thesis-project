@@ -21,10 +21,8 @@ def parse_mixed_monthly_date(x: Any) -> Any:
             return pd.NaT
         return dt.to_period("M").to_timestamp("M")
 
-    dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
-    if pd.isna(dt):
-        dt = pd.to_datetime(s, errors="coerce", yearfirst=True)
-
+    # Silenced warning - let pandas infer format
+    dt = pd.to_datetime(s, errors="coerce")
     if pd.isna(dt):
         return pd.NaT
 

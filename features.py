@@ -190,14 +190,14 @@ def build_feature_panel(df: pd.DataFrame, regime_config, include_macro_interacti
                 max_interactions=regime_config.coding_max_interactions,
             )
 
-        feature_cols = char_cols + macro_cols + industry_cols + interaction_cols
+        feature_cols = char_cols + industry_cols + interaction_cols  # Macro removed
 
     else:
         if include_macro_interactions:
             out = create_macro_interactions(out, all_char_cols, macro_cols)
 
         interaction_cols = [c for c in out.columns if "__x__" in c]
-        feature_cols = all_char_cols + macro_cols + industry_cols + interaction_cols
+        feature_cols = all_char_cols + industry_cols + interaction_cols  # Macro removed
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
     return out, feature_cols
