@@ -16,7 +16,7 @@ Updated replication package scaffold for Gu, Kelly, and Xiu (2020).
 Install dependencies:
 
 ```bash
-pip install pandas numpy scikit-learn matplotlib jupyter torch
+pip install pandas numpy scikit-learn matplotlib jupyter torch pyarrow
 ```
 
 ## Main entry point

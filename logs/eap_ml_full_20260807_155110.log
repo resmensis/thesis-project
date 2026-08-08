@@ -1,0 +1,11 @@
+2026-08-07 15:51:10 | INFO | eap_ml | Logger initialized.
+2026-08-07 15:51:10 | INFO | eap_ml | Regime mode: full
+2026-08-07 15:51:10 | INFO | eap_ml | Log file: logs\eap_ml_full_20260807_155110.log
+2026-08-07 15:51:10 | INFO | eap_ml | Starting experiment run.
+2026-08-07 15:51:10 | INFO | eap_ml | Random seed: 42
+2026-08-07 15:51:10 | INFO | eap_ml | Cache dir: cache
+2026-08-07 15:51:10 | INFO | eap_ml | Data regime: full
+2026-08-07 15:51:10 | INFO | eap_ml | Building complete dataset.
+2026-08-07 15:51:10 | INFO | eap_ml.dataset_builder | Building complete dataset, output: cache/complete_dataset.parquet
+2026-08-07 17:17:14 | INFO | eap_ml.dataset_builder | Imputing missing characteristics using monthly cross-sectional medians
+2026-08-07 17:17:18 | INFO | eap_ml.dataset_builder | Complete dataset built: (209708, 110)

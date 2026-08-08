@@ -1,0 +1,9 @@
+2026-08-08 22:37:32 | INFO | eap_ml | Logger initialized.
+2026-08-08 22:37:32 | INFO | eap_ml | Regime mode: full
+2026-08-08 22:37:32 | INFO | eap_ml | Log file: logs\eap_ml_full_20260808_223732.log
+2026-08-08 22:37:32 | INFO | eap_ml | Starting experiment run.
+2026-08-08 22:37:32 | INFO | eap_ml | Random seed: 42
+2026-08-08 22:37:32 | INFO | eap_ml | Cache dir: cache
+2026-08-08 22:37:32 | INFO | eap_ml | Data regime: full
+2026-08-08 22:37:32 | INFO | eap_ml | Building complete dataset.
+2026-08-08 22:37:32 | INFO | eap_ml.dataset_builder | Building complete dataset, output: cache/complete_dataset.parquet
