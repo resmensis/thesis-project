@@ -75,30 +75,49 @@ def main():
     ensure_dir(cache_cfg.cache_dir)
 
     # ------------------------------------------------------------------
-    # 1. Build or load complete dataset
+    # 1. Build or load complete dataset (cache logic in run_experiments.py)
     # ------------------------------------------------------------------
-    logger.info("Building complete dataset.")
-    complete = build_complete_dataset(
-        datashare_path=data_cfg.datashare_path,
-        crsp_path=data_cfg.crsp_monthly_path,
-        macro_path=data_cfg.macro_path,
-        out_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet",
-        cache_enabled=cache_cfg.enabled,
-        force_rebuild=cache_cfg.force_rebuild_dataset,
-        possible_crsp_cols=data_cfg.possible_crsp_cols,
-        possible_marco_cols=data_cfg.possible_marco_cols,
-        cols_vars_monthly=freq_cfg.cols_vars_monthly,
-        cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-        cols_vars_annual=freq_cfg.cols_vars_annual,
-        sic2_column=data_cfg.sic2_column,
-    )
+    complete_cache_path = f"{cache_cfg.cache_dir}/complete_dataset.parquet"
+    
+    if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
+        complete = maybe_load_parquet(complete_cache_path, enabled=True)
+        if complete is not None:
+            logger.info(f"Loaded cached complete dataset from {complete_cache_path}")
+        else:
+            logger.info("Building complete dataset (cache miss).")
+            complete = build_complete_dataset(
+                datashare_path=data_cfg.datashare_path,
+                crsp_path=data_cfg.crsp_monthly_path,
+                macro_path=data_cfg.macro_path,
+                possible_crsp_cols=data_cfg.possible_crsp_cols,
+                possible_marco_cols=data_cfg.possible_marco_cols,
+                cols_vars_monthly=freq_cfg.cols_vars_monthly,
+                cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
+                cols_vars_annual=freq_cfg.cols_vars_annual,
+                sic2_column=data_cfg.sic2_column,
+            )
+            save_parquet(complete, complete_cache_path, enabled=cache_cfg.save_complete_dataset)
+    else:
+        logger.info("Building complete dataset (cache disabled or force_rebuild).")
+        complete = build_complete_dataset(
+            datashare_path=data_cfg.datashare_path,
+            crsp_path=data_cfg.crsp_monthly_path,
+            macro_path=data_cfg.macro_path,
+            possible_crsp_cols=data_cfg.possible_crsp_cols,
+            possible_marco_cols=data_cfg.possible_marco_cols,
+            cols_vars_monthly=freq_cfg.cols_vars_monthly,
+            cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
+            cols_vars_annual=freq_cfg.cols_vars_annual,
+            sic2_column=data_cfg.sic2_column,
+        )
+        save_parquet(complete, complete_cache_path, enabled=cache_cfg.save_complete_dataset)
 
     logger.info(f"Complete dataset shape: {complete.shape}")
 
     # Check if we should stop after dataset creation
     if run_ctrl_cfg.dataset_creation_only:
         print("Dataset creation only mode is ON.")
-        print(f"Complete dataset created and cached at: {cache_cfg.cache_dir}/complete_dataset.parquet")
+        print(f"Complete dataset created and cached at: {complete_cache_path}")
         return
 
     if regime_cfg.mode == "coding":
@@ -106,7 +125,7 @@ def main():
         complete = reduce_observations_for_coding(complete, max_stocks_per_month=regime_cfg.coding_max_stocks_per_month, random_state=repro_cfg.random_state)
 
     # ------------------------------------------------------------------
-    # 2. Build or load feature panel
+    # 2. Build or load feature panel (cache logic in run_experiments.py)
     # ------------------------------------------------------------------
     feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
     feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
@@ -116,11 +135,11 @@ def main():
         cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
         
         if cached_panel is not None and cached_cols is not None:
-            logger.info(f"Loading cached feature panel from {feature_panel_path}")
+            logger.info(f"Loaded cached feature panel from {feature_panel_path}")
             feature_panel = cached_panel
             feature_cols = cached_cols
         else:
-            logger.info("Building feature panel (no cache found).")
+            logger.info("Building feature panel (cache miss).")
             feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
             save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
             save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
