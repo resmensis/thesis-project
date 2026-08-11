@@ -95,6 +95,7 @@ def main():
 
     logger.info(f"Complete dataset shape: {complete.shape}")
 
+    # Check if we should stop after dataset creation
     if run_ctrl_cfg.dataset_creation_only:
         print("Dataset creation only mode is ON.")
         print(f"Complete dataset created and cached at: {cache_cfg.cache_dir}/complete_dataset.parquet")
@@ -131,6 +132,13 @@ def main():
     
     logger.info(f"Feature panel shape: {feature_panel.shape}")
     logger.info(f"Number of feature columns: {len(feature_cols)}")
+
+    # Check if we should stop after feature panel creation
+    if run_ctrl_cfg.feature_panel_only:
+        print("Feature panel only mode is ON.")
+        print(f"Feature panel created and cached at: {feature_panel_path}")
+        print(f"Feature columns cached at: {feature_cols_path}")
+        return
 
     # ------------------------------------------------------------------
     # 3. Run expanding window forecasting
