@@ -19,7 +19,7 @@ from config import (
 )
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
-from dataset_builder import build_complete_dataset, reduce_observations_for_coding, select_constant_stocks_for_coding_reduced
+from dataset_builder import build_complete_dataset, select_constant_stocks_for_coding_reduced
 from sample_splits import subset_timeframe, chronological_split
 from features import build_feature_panel
 from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
@@ -122,11 +122,7 @@ def main():
         return
 
     # Apply regime-specific reductions
-    if regime_cfg.mode == "coding":
-        logger.info("Applying coding-mode sampling reduction (500 stocks per month, random selection).")
-        complete = reduce_observations_for_coding(complete, max_stocks_per_month=regime_cfg.coding_max_stocks_per_month, random_state=repro_cfg.random_state)
-    
-    elif regime_cfg.mode == "coding_reduced":
+    if regime_cfg.mode == "coding_reduced":
         logger.info("Applying coding_reduced mode: selecting 500 constant stocks across time.")
         # Select 500 permno based on random seed - constant across entire time period
         selected_permno = select_constant_stocks_for_coding_reduced(

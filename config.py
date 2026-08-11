@@ -62,11 +62,9 @@ class DataRegimeConfig:
     
     Modes:
     - "full": Full dataset with all 94 characteristics, all macro interactions (~920 features)
-    - "coding": Reduced dataset with 500 stocks per month (random selection), all characteristics
     - "coding_reduced": Minimal dataset with 500 constant stocks, 15 characteristics, only "d/p" interactions (~104 features)
     """
-    mode: str = "full"  # 'full', 'coding', or 'coding_reduced'
-    coding_max_stocks_per_month: int = 500  # For 'coding' mode: max stocks per month
+    mode: str = "full"  # 'full' or 'coding_reduced'
     coding_reduced_stocks: int = 500  # For 'coding_reduced' mode: constant stocks across time
     coding_reduced_macro_vars: List[str] = field(default_factory=lambda: ["d/p"])  # For 'coding_reduced' mode: which macro vars to interact with
     coding_keep_macro_count: int = 2

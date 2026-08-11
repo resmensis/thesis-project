@@ -8,9 +8,8 @@ This module builds the feature panel from the complete dataset by:
 4. Creating macro interactions (characteristics × macro variables)
 5. Building the final feature panel
 
-Supports three modes via DataRegimeConfig:
+Supports two modes via DataRegimeConfig:
 - "full": All 94 characteristics, all 8 macro interactions
-- "coding": All characteristics, but only top N macro interactions (based on coding_keep_macro_count)
 - "coding_reduced": Only 15 candidate characteristics, only "d/p" macro interactions
 """
 
@@ -33,7 +32,7 @@ def build_feature_panel(
     
     Args:
         df: Complete dataset with characteristics and macro variables
-        regime_config: DataRegimeConfig with mode ("full", "coding", or "coding_reduced")
+        regime_config: DataRegimeConfig with mode ("full" or "coding_reduced")
         include_macro_interactions: Whether to create macro interactions
         reduced_macro_vars: For coding_reduced mode, which macro vars to use (e.g., ["d/p"])
     
