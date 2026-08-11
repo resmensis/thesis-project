@@ -1,270 +1,290 @@
-from __future__ import annotations
+"""
+Dataset builder for equity prediction.
 
-import logging
-import numpy as np
+This module builds the complete dataset by:
+1. Loading and merging datashare (characteristics), CRSP (returns), and macro data
+2. Imputing missing characteristics (cross-sectional median by month)
+3. Building excess_ret_lead (target variable)
+4. Applying temporal shifts based on characteristic frequency
+"""
+
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
+from typing import List, Dict, Optional
 
-from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
-from io_utils import maybe_load_parquet, save_parquet
-
-logger = logging.getLogger("eap_ml.dataset_builder")
+from config import CharacteristicsFrequency
 
 
-def get_datashare_characteristic_cols(ds: pd.DataFrame) -> list[str]:
-    """
-    Return the 94 characteristic columns from datashare.csv.
-
-    Assumptions on datashare.csv:
-    columns 3-96: 94 characteristics. 
-    column 1: permno
-    column 2: date
-    column 97: sic2 (to create industry dummies)
-
-    Since pandas is 0-based, that corresponds to positions 2:95.
-    """
-    return ds.columns[2:95].tolist()
-
-
-def compute_missingness_for_characteristics(
-    df: pd.DataFrame,
-    characteristic_cols: list[str],
+def load_and_merge_data(
+    datashare_path: str,
+    crsp_path: str,
+    macro_path: str,
+    possible_crsp_cols: List[str],
+    possible_marco_cols: List[str],
+    sic2_column: str,
 ) -> pd.DataFrame:
     """
-    Compute percentage of missing values per characteristic.
+    Load and merge the three data sources.
+    
+    Args:
+        datashare_path: Path to datashare.csv (94 characteristics)
+        crsp_path: Path to crsp_monthly.csv (returns)
+        macro_path: Path to Data2024_monthly_goyal.csv (macro variables)
+        possible_crsp_cols: List of possible column names in CRSP data
+        possible_marco_cols: List of possible column names in macro data
+        sic2_column: Column name for industry codes in datashare.csv
+    
+    Returns:
+        Merged DataFrame with characteristics, returns, and macro variables
     """
-    missing_pct = df[characteristic_cols].isna().mean().mul(100.0)
+    # Load datashare
+    datashare = pd.read_csv(datashare_path)
+    logger.info(f"Loaded datashare: {datashare.shape}")
+    
+    # Load CRSP
+    crsp = pd.read_csv(crsp_path)
+    logger.info(f"Loaded CRSP: {crsp.shape}")
+    
+    # Load macro
+    macro = pd.read_csv(macro_path)
+    logger.info(f"Loaded macro: {macro.shape}")
+    
+    # Merge datashare + CRSP
+    df = pd.merge(datashare, crsp, on=["permno", "yyyymm"], how="left")
+    logger.info(f"After merging datashare+CRSP: {df.shape}")
+    
+    # Merge with macro
+    df = pd.merge(df, macro, on="yyyymm", how="left")
+    logger.info(f"After merging with macro: {df.shape}")
+    
+    return df
 
-    out = (
-        missing_pct
-        .rename("missing_pct")
-        .reset_index()
-        .rename(columns={"index": "characteristic"})
-        .sort_values("missing_pct", ascending=False)
-        .reset_index(drop=True)
+
+def impute_missing_characteristics(df: pd.DataFrame, freq_config: CharacteristicsFrequency) -> pd.DataFrame:
+    """
+    Impute missing characteristics using cross-sectional median by month.
+    
+    Args:
+        df: DataFrame with characteristics
+        freq_config: CharacteristicsFrequency config with column lists
+    
+    Returns:
+        DataFrame with imputed characteristics
+    """
+    # Get all characteristic columns
+    all_chars = (
+        freq_config.cols_vars_monthly +
+        freq_config.cols_vars_quarterly +
+        freq_config.cols_vars_annual
     )
-    return out
-
-
-def save_missingness_lineplot(
-    missing_df: pd.DataFrame,
-    out_jpg_path: str,
-    title: str,
-    color: str = "blue",
-):
-    """
-    Save a line plot with dots showing missing data percentage per characteristic.
-    """
-    plt.figure(figsize=(14, 6))
-    plt.plot(range(len(missing_df)), missing_df["missing_pct"], marker="o", linestyle="-", color=color, markersize=4)
-    plt.xlabel("Characteristic Index (sorted by missingness)")
-    plt.ylabel("Missing data percentage")
-    plt.title(title)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(out_jpg_path, dpi=200, bbox_inches="tight")
-    plt.close()
-
-
-def save_missingness_comparison_plot(
-    missing_before: pd.DataFrame,
-    missing_after: pd.DataFrame,
-    out_jpg_path: str,
-    title: str = "Missing Data Percentage: Before vs After Imputation",
-):
-    """
-    Save a comparison plot showing missingness before and after imputation.
-    """
-    plt.figure(figsize=(14, 6))
     
-    # Merge on characteristic name
-    merged = missing_before.merge(
-        missing_after, 
-        on="characteristic", 
-        suffixes=("_before", "_after")
-    )
+    # Impute missing values by month (cross-sectional median)
+    for char in all_chars:
+        if char in df.columns:
+            df[char] = df.groupby("yyyymm")[char].transform(
+                lambda x: x.fillna(x.median())
+            )
     
-    plt.plot(range(len(merged)), merged["missing_pct_before"], 
-             marker="o", linestyle="-", color="red", markersize=4, label="Before Imputation", alpha=0.7)
-    plt.plot(range(len(merged)), merged["missing_pct_after"], 
-             marker="s", linestyle="-", color="green", markersize=4, label="After Imputation", alpha=0.7)
+    logger.info(f"Imputed missing characteristics")
+    return df
+
+
+def build_excess_ret_lead(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build the target variable: excess return lead (excess_ret_lead).
     
-    plt.xlabel("Characteristic Index")
-    plt.ylabel("Missing data percentage")
-    plt.title(title)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(out_jpg_path, dpi=200, bbox_inches="tight")
-    plt.close()
-
-
-def impute_characteristics_by_month_cross_sectional_median(
-    df: pd.DataFrame,
-    characteristic_cols: list[str],
-) -> pd.DataFrame:
+    excess_ret_lead = ret_lead - tbl_lead
+    where ret_lead is the lead return and tbl_lead is the lead T-bill rate
+    
+    Args:
+        df: DataFrame with ret and tbl columns
+    
+    Returns:
+        DataFrame with excess_ret_lead column
     """
-    Impute missing characteristics using the cross-sectional median within each month.
+    # Calculate excess return lead
+    df["excess_ret_lead"] = df["ret_lead"] - df["tbl_lead"]
+    
+    logger.info(f"Built excess_ret_lead: mean={df['excess_ret_lead'].mean():.4f}, std={df['excess_ret_lead'].std():.4f}")
+    return df
 
-    This follows the Gu, Kelly, and Xiu (2020) approach conceptually:
-    missing characteristics are replaced with cross-sectional medians.
+
+def apply_temporal_shifts(df: pd.DataFrame, freq_config: CharacteristicsFrequency) -> pd.DataFrame:
     """
-    out = df.copy()
-
-    for col in characteristic_cols:
-        out[col] = out[col].fillna(out.groupby("date")[col].transform("median"))
-
-    return out
+    Apply temporal shifts to characteristics based on their frequency.
+    
+    Monthly characteristics: shift(-1) - available next month
+    Quarterly characteristics: shift(-3) - available next quarter
+    Annual characteristics: shift(-6) - available next 6 months (conservative)
+    
+    Args:
+        df: DataFrame with characteristics
+        freq_config: CharacteristicsFrequency config with column lists
+    
+    Returns:
+        DataFrame with shifted characteristics
+    """
+    # Shift monthly characteristics
+    for char in freq_config.cols_vars_monthly:
+        if char in df.columns:
+            df[char] = df.groupby("permno")[char].shift(-1)
+    
+    # Shift quarterly characteristics
+    for char in freq_config.cols_vars_quarterly:
+        if char in df.columns:
+            df[char] = df.groupby("permno")[char].shift(-3)
+    
+    # Shift annual characteristics
+    for char in freq_config.cols_vars_annual:
+        if char in df.columns:
+            df[char] = df.groupby("permno")[char].shift(-6)
+    
+    logger.info(f"Applied temporal shifts")
+    return df
 
 
 def build_complete_dataset(
     datashare_path: str,
     crsp_path: str,
     macro_path: str,
-    out_path: str,
-    possible_crsp_cols: list[str],
-    possible_marco_cols: list[str],
-    cols_vars_monthly: list[str],
-    cols_vars_quarterly: list[str],
-    cols_vars_annual: list [str],
-    cache_enabled: bool = True,
-    force_rebuild: bool = False,
-    sic2_column: str = "sic2",    
-):
-    logger.info(f"Building complete dataset, output: {out_path}")
+    possible_crsp_cols: List[str],
+    possible_marco_cols: List[str],
+    cols_vars_monthly: List[str],
+    cols_vars_quarterly: List[str],
+    cols_vars_annual: List[str],
+    sic2_column: str,
+) -> pd.DataFrame:
+    """
+    Build the complete dataset from raw data sources.
     
-    if cache_enabled and not force_rebuild:
-        cached = maybe_load_parquet(out_path, enabled=True)
-        if cached is not None:
-            logger.info(f"Loading cached complete dataset from {out_path}")
-            return cached
-
-    logger.debug("Loading source datasets")
-    ds = load_datashare(datashare_path)
-    crsp = load_crsp_monthly(crsp_path, possible_crsp_cols)
-    macro = load_macro_monthly(macro_path, possible_marco_cols)
-
-    # Columns 3-96 in datashare.csv = 94 characteristics.
-    characteristic_cols = get_datashare_characteristic_cols(ds)
-    logger.debug(f"Identified {len(characteristic_cols)} characteristic columns")
-
-    logger.debug("Merging datashare with CRSP")
-    merged = ds.merge(
-        crsp[["permno", "date", "ret", "dlret", "ret_total"]],
-        on=["permno", "date"],
-        how="inner",
-        validate="one_to_one",
+    This is a pure function that always builds the dataset (no caching logic).
+    Caching should be handled by the caller (run_experiments.py).
+    
+    Args:
+        datashare_path: Path to datashare.csv
+        crsp_path: Path to crsp_monthly.csv
+        macro_path: Path to Data2024_monthly_goyal.csv
+        possible_crsp_cols: List of possible column names in CRSP data
+        possible_marco_cols: List of possible column names in macro data
+        cols_vars_monthly: List of monthly characteristic column names
+        cols_vars_quarterly: List of quarterly characteristic column names
+        cols_vars_annual: List of annual characteristic column names
+        sic2_column: Column name for industry codes
+    
+    Returns:
+        Complete dataset DataFrame
+    """
+    logger.info("Building complete dataset from raw data sources.")
+    
+    # Create frequency config
+    freq_config = CharacteristicsFrequency(
+        cols_vars_monthly=cols_vars_monthly,
+        cols_vars_quarterly=cols_vars_quarterly,
+        cols_vars_annual=cols_vars_annual,
     )
-
-    logger.debug("Merging with macro data")
-    merged = merged.merge(macro, on="date", how="left")
-    merged["industry_code"] = merged[sic2_column].astype("string").fillna("UNK")
-    merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
-
-    # ------------------------------------------------------------------
-    # 1. Missingness before imputation
-    # ------------------------------------------------------------------
-    missing_before = compute_missingness_for_characteristics(merged, characteristic_cols)
-
-    before_csv = out_path.replace(".parquet", "_missingness_before.csv")
-    before_jpg = out_path.replace(".parquet", "_missingness_before.jpg")
-
-    missing_before.to_csv(before_csv, index=False)
-    save_missingness_lineplot(
-        missing_before,
-        before_jpg,
-        title="Missing data percentage per characteristic (before imputation)",
-        color="red",
+    
+    # Step 1: Load and merge data
+    df = load_and_merge_data(
+        datashare_path=datashare_path,
+        crsp_path=crsp_path,
+        macro_path=macro_path,
+        possible_crsp_cols=possible_crsp_cols,
+        possible_marco_cols=possible_marco_cols,
+        sic2_column=sic2_column,
     )
-    logger.debug(f"Saved missingness before imputation: {before_csv}, {before_jpg}")
-
-    # ------------------------------------------------------------------
-    # 2. Impute missing characteristics using monthly cross-sectional medians
-    # ------------------------------------------------------------------
-    logger.info("Imputing missing characteristics using monthly cross-sectional medians")
-    merged = impute_characteristics_by_month_cross_sectional_median(merged, characteristic_cols)
-
-    # ------------------------------------------------------------------
-    # 3. Missingness after imputation
-    # ------------------------------------------------------------------
-    missing_after = compute_missingness_for_characteristics(merged, characteristic_cols)
-
-    after_csv = out_path.replace(".parquet", "_missingness_after.csv")
-    after_jpg = out_path.replace(".parquet", "_missingness_after.jpg")
-
-    missing_after.to_csv(after_csv, index=False)
-    save_missingness_lineplot(
-        missing_after,
-        after_jpg,
-        title="Missing data percentage per characteristic (after imputation)",
-        color="green",
-    )
-    logger.debug(f"Saved missingness after imputation: {after_csv}, {after_jpg}")
-
-    # ------------------------------------------------------------------
-    # 4. Comparison plot (before vs after)
-    # ------------------------------------------------------------------
-    comparison_jpg = out_path.replace(".parquet", "_missingness_comparison.jpg")
-    save_missingness_comparison_plot(
-        missing_before,
-        missing_after,
-        comparison_jpg,
-        title="Missing Data Percentage: Before vs After Imputation",
-    )
-    logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
-
-    # Build next-month excess return target after merge/imputation stage.
-    logger.debug("Building lead excess return target")
-    merged["excess_ret_lead"] = merged.groupby("permno")["ret_total"].shift(-1)
-
-
-    if "rf" in merged.columns:
-        if merged["rf"].abs().median() > 1:
-            logger.debug("Converting rf from percentage to decimal")
-            merged["rf"] = merged["rf"] / 100.0
-        merged["rf_lead"] = merged.groupby("permno")["rf"].shift(-1)
-        merged["excess_ret_lead"] = merged["excess_ret_lead"] - merged["rf_lead"]
-
-
-    # Build shifts for monthly, quarterly and annual characteristcs
-    logger.debug("Building characteristic shifts")
-    merged = merged.sort_values(["permno", "date"])
-    grouped = merged.groupby("permno")
-
-    for i in merged.columns:
-        if i in cols_vars_monthly:
-            merged[i] = grouped[i].shift(-1)
-        elif i in cols_vars_quarterly:
-            merged[i] = grouped[i].shift(-3)
-        elif i in cols_vars_annual:
-            merged[i] = grouped[i].shift(-6)
-
-
-    merged = merged.dropna(subset=["excess_ret_lead"])
-    logger.info(f"Complete dataset built: {merged.shape}")
-    save_parquet(merged, out_path, enabled=cache_enabled)
-    return merged
+    
+    # Step 2: Impute missing characteristics
+    df = impute_missing_characteristics(df, freq_config)
+    
+    # Step 3: Build target variable
+    df = build_excess_ret_lead(df)
+    
+    # Step 4: Apply temporal shifts
+    df = apply_temporal_shifts(df, freq_config)
+    
+    logger.info(f"Complete dataset built: {df.shape}")
+    
+    return df
 
 
 def reduce_observations_for_coding(
     df: pd.DataFrame,
-    max_stocks_per_month: int,
+    max_stocks_per_month: int = 500,
     random_state: int = 42,
-):
-    logger.info(f"Reducing observations for coding mode: max {max_stocks_per_month} stocks per month")
+) -> pd.DataFrame:
+    """
+    Reduce the dataset to max_stocks_per_month for coding mode.
+    
+    This samples up to max_stocks_per_month for each month independently,
+    which is different from coding_reduced mode where the same 500 stocks
+    are kept constant across all months.
+    
+    Args:
+        df: Complete dataset
+        max_stocks_per_month: Maximum number of stocks per month (default: 500)
+        random_state: Random seed for reproducibility (default: 42)
+    
+    Returns:
+        Reduced dataset with max_stocks_per_month per month
+    """
+    logger.info(f"Reducing to {max_stocks_per_month} stocks per month for coding mode.")
+    
+    # Set random state
     rng = np.random.RandomState(random_state)
+    
+    # Sample max_stocks_per_month for each month
+    def sample_month(group):
+        if len(group) <= max_stocks_per_month:
+            return group
+        else:
+            sampled_idx = rng.choice(group.index, size=max_stocks_per_month, replace=False)
+            return group.loc[sampled_idx]
+    
+    reduced = df.groupby("yyyymm").apply(sample_month).reset_index(drop=True)
+    
+    logger.info(f"Reduced dataset: {reduced.shape} (from {df.shape})")
+    
+    return reduced
 
-    def _sample_month(g):
-        if len(g) <= max_stocks_per_month:
-            return g
-        idx = rng.choice(g.index.to_numpy(), size=max_stocks_per_month, replace=False)
-        return g.loc[idx].sort_values("permno")
 
-    out = (
-        df.groupby("date", group_keys=False)
-        .apply(_sample_month)
-        .sort_values(["date", "permno"])
-        .reset_index(drop=True)
-    )
-    logger.info(f"Reduced dataset: {out.shape}")
-    return out
+def select_constant_stocks_for_coding_reduced(
+    df: pd.DataFrame,
+    n_stocks: int = 500,
+    random_state: int = 42,
+) -> List[int]:
+    """
+    Select a constant set of stocks (permno) for coding_reduced mode.
+    
+    Unlike the monthly sampling in reduce_observations_for_coding(), this function
+    selects exactly n_stocks that are kept constant across the entire time period.
+    This ensures the same stocks are used for all dates, maintaining temporal consistency.
+    
+    Selection is based on the globally set random seed to ensure reproducibility.
+    
+    Args:
+        df: Complete dataset with 'permno' column
+        n_stocks: Number of stocks to select (default: 500)
+        random_state: Random seed for reproducibility (default: 42)
+    
+    Returns:
+        List of selected permno values
+    
+    Example:
+        >>> selected_permno = select_constant_stocks_for_coding_reduced(complete_df, n_stocks=500, random_state=42)
+        >>> reduced_df = complete_df[complete_df["permno"].isin(selected_permno)]
+    """
+    # Get unique permno
+    unique_permno = df["permno"].unique().tolist()
+    
+    # Set random state for reproducibility
+    rng = np.random.RandomState(random_state)
+    
+    # Select n_stocks randomly
+    if len(unique_permno) <= n_stocks:
+        logger.info(f"Only {len(unique_permno)} unique stocks available, keeping all")
+        selected_permno = unique_permno
+    else:
+        selected_permno = rng.choice(unique_permno, size=n_stocks, replace=False).tolist()
+        logger.info(f"Selected {len(selected_permno)} constant stocks for coding_reduced mode")
+    
+    return selected_permno
