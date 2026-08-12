@@ -1,7 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
 import pandas as pd
-import numpy as np
 
 from config import (
     CacheConfig,
@@ -19,7 +18,7 @@ from config import (
 )
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
-from dataset_builder import build_complete_dataset, select_constant_stocks_for_coding_reduced
+from dataset_builder import build_complete_dataset, reduce_observations_for_coding
 from sample_splits import subset_timeframe, chronological_split
 from features import build_feature_panel
 from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
@@ -121,22 +120,9 @@ def main():
         print(f"Complete dataset created and cached at: {complete_cache_path}")
         return
 
-    # Apply regime-specific reductions
-    if regime_cfg.mode == "coding_reduced":
-        logger.info("Applying coding_reduced mode: selecting 500 constant stocks across time.")
-        # Select 500 permno based on random seed - constant across entire time period
-        selected_permno = select_constant_stocks_for_coding_reduced(
-            complete, 
-            n_stocks=regime_cfg.coding_reduced_stocks, 
-            random_state=repro_cfg.random_state
-        )
-        complete = complete[complete["permno"].isin(selected_permno)].copy()
-        logger.info(f"Reduced to {len(selected_permno)} stocks, {len(complete)} observations")
-        
-        # Save reduced dataset to separate file
-        reduced_cache_path = f"{cache_cfg.cache_dir}/complete_dataset_coding_reduced.parquet"
-        save_parquet(complete, reduced_cache_path, enabled=cache_cfg.save_complete_dataset)
-        logger.info(f"Saved reduced dataset to {reduced_cache_path}")
+    if regime_cfg.mode == "coding":
+        logger.info("Applying coding-mode sampling reduction.")
+        complete = reduce_observations_for_coding(complete, max_stocks_per_month=regime_cfg.coding_max_stocks_per_month, random_state=repro_cfg.random_state)
 
     # ------------------------------------------------------------------
     # 2. Build or load feature panel (cache logic in run_experiments.py)
@@ -154,22 +140,12 @@ def main():
             feature_cols = cached_cols
         else:
             logger.info("Building feature panel (cache miss).")
-            feature_panel, feature_cols = build_feature_panel(
-                complete, 
-                regime_config=regime_cfg, 
-                include_macro_interactions=True,
-                reduced_macro_vars=regime_cfg.coding_reduced_macro_vars if regime_cfg.mode == "coding_reduced" else None,
-            )
+            feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
             save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
             save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
     else:
         logger.info("Building feature panel (cache disabled or force_refit).")
-        feature_panel, feature_cols = build_feature_panel(
-            complete, 
-            regime_config=regime_cfg, 
-            include_macro_interactions=True,
-            reduced_macro_vars=regime_cfg.coding_reduced_macro_vars if regime_cfg.mode == "coding_reduced" else None,
-        )
+        feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
         save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
         save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
     

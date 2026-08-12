@@ -10,12 +10,12 @@ class ReproducibilityConfig:
 @dataclass
 class RunControlConfig:
     dataset_creation_only: bool = False  # If True, stop after building complete_dataset
-    feature_panel_only: bool = True  # If True, stop after building feature_panel
+    feature_panel_only: bool = False  # If True, stop after building feature_panel
 
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    force_rebuild_dataset: bool = True  # If True, rebuild complete_dataset even if cached
+    force_rebuild_dataset: bool = False  # If True, rebuild complete_dataset even if cached
     force_refit_models: bool = False  # If True, rebuild feature_panel even if cached
     save_complete_dataset: bool = True
     save_feature_panel: bool = True
@@ -57,16 +57,10 @@ class SplitConfig:
 
 @dataclass
 class DataRegimeConfig:
-    """
-    Configuration for data regime mode.
-    
-    Modes:
-    - "full": Full dataset with all 94 characteristics, all macro interactions (~920 features)
-    - "coding_reduced": Minimal dataset with 500 constant stocks, 15 characteristics, only "d/p" interactions (~104 features)
-    """
     mode: str = "full"  # 'full' or 'coding_reduced'
     coding_reduced_stocks: int = 500  # For 'coding_reduced' mode: constant stocks across time
     coding_reduced_macro_vars: List[str] = field(default_factory=lambda: ["d/p"])  # For 'coding_reduced' mode: which macro vars to interact with
+    coding_max_stocks_per_month: int = 500
     coding_keep_macro_count: int = 2
     coding_keep_industry_count: int = 10
     coding_include_interactions: bool = True
@@ -270,5 +264,3 @@ class ModelSelectionConfig:
     """
     run_all_models: bool = True  # If True, run all models (including LSTM) - DEFAULT
     models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
-    # Example: models_to_run = ["OLS_3"]  # Only OLS-3 benchmark
-    # Example: models_to_run = ["OLS_3", "GBRT", "MLP"]  # Custom subset
