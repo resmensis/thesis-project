@@ -35,18 +35,17 @@ class TimeframeConfig:
 class DataFilesConfig:
     datashare_path: str = "./data/datashare.csv"
     crsp_monthly_path: str = "./data/crsp_monthly.csv"
-    macro_path: str = "./data/Data2024_monthly_goyal.csv" 
+    macro_path: str = "./data/Data2024_monthly_goyal.csv"
+    sic2_column: str = "sic2"
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
         "permno",
         "date", "yyyymm",
         "ret", "dlret"
     ])
     possible_marco_cols: List[str] = field(default_factory=lambda: [
-        "date", "yyyymm", 
+        "date", "yyyymm",
         "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"
     ])
-
-
 
 
 @dataclass
@@ -57,7 +56,7 @@ class SplitConfig:
 
 @dataclass
 class DataRegimeConfig:
-    mode: str = "full"  # 'full' or 'coding'
+    mode: str = "full"
     coding_max_stocks_per_month: int = 500
     coding_keep_macro_count: int = 2
     coding_keep_industry_count: int = 10
@@ -137,46 +136,46 @@ class HyperGridConfig:
 @dataclass
 class CharacteristicsFrequency:
     cols_vars_monthly: List[str] = field(default_factory=lambda: [
-        'baspread', 'beta', 'betasq', 
-        'chmom', 
-        'dolvol', 
-        'idiovol', 'ill', 'indmom', 
-        'maxret', 'mom12m', 'mom1m', 'mom36m', 'mom6m', 
-        'mvel1', 
-        'pricedelay', 
-        'retvol', 
-        'std_dolvol', 'std_turn', 
+        'baspread', 'beta', 'betasq',
+        'chmom',
+        'dolvol',
+        'idiovol', 'ill', 'indmom',
+        'maxret', 'mom12m', 'mom1m', 'mom36m', 'mom6m',
+        'mvel1',
+        'pricedelay',
+        'retvol',
+        'std_dolvol', 'std_turn',
         'turn', 'zerotrade'
     ])
 
     cols_vars_quarterly: List[str] = field(default_factory=lambda: [
-        'aeavol', 
-        'cash', 
-        'chtx', 'cinvest', 
-        'ear', 
-        'ms', 
-        'nincr', 
-        'roaq', 'roavol', 'roeq', 
-        'rsup', 
+        'aeavol',
+        'cash',
+        'chtx', 'cinvest',
+        'ear',
+        'ms',
+        'nincr',
+        'roaq', 'roavol', 'roeq',
+        'rsup',
         'stdacc', 'stdcf'
     ])
 
     cols_vars_annual: List[str] = field(default_factory=lambda: [
-        'absacc', 'acc', 
-        'age', 'agr', 
-        'bm', 'bm_ia', 
-        'cashdebt', 'cashpr', 'cfp', 'cfp_ia', 'chatoia', 'chcsho', 'chempia', 'chinv', 
-        'chpmia', 
-        'convind', 'currat', 'depr', 'divi', 'divo', 
-        'dy', 
-        'egr', 'ep', 'gma', 'grcapx', 'grltnoa', 'herf', 'hire', 
-        'invest', 'lev', 'lgr', 
-        'mve_ia', 
-        'operprof', 'orgcap', 'pchcapx_ia', 'pchcurrat', 'pchdepr', 'pchgm_pchsale', 'pchquick', 'pchsale_pchinvt', 'pchsale_pchrect', 
-        'pchsale_pchxsga', 'pchsaleinv', 'pctacc', 
-        'ps', 'quick', 'rd', 'rd_mve', 'rd_sale', 'realestate', 
+        'absacc', 'acc',
+        'age', 'agr',
+        'bm', 'bm_ia',
+        'cashdebt', 'cashpr', 'cfp', 'cfp_ia', 'chatoia', 'chcsho', 'chempia', 'chinv',
+        'chpmia',
+        'convind', 'currat', 'depr', 'divi', 'divo',
+        'dy',
+        'egr', 'ep', 'gma', 'grcapx', 'grltnoa', 'herf', 'hire',
+        'invest', 'lev', 'lgr',
+        'mve_ia',
+        'operprof', 'orgcap', 'pchcapx_ia', 'pchcurrat', 'pchdepr', 'pchgm_pchsale', 'pchquick', 'pchsale_pchinvt', 'pchsale_pchrect',
+        'pchsale_pchxsga', 'pchsaleinv', 'pctacc',
+        'ps', 'quick', 'rd', 'rd_mve', 'rd_sale', 'realestate',
         'roic',
-        'salecash', 'saleinv', 'salerec', 'secured', 'securedind', 'sgr', 'sin', 'sp', 
+        'salecash', 'saleinv', 'salerec', 'secured', 'securedind', 'sgr', 'sin', 'sp',
         'tang', 'tb'
     ])
 
@@ -191,3 +190,21 @@ class LoggingConfig:
     console_level_coding: str = "DEBUG"
     logger_name: str = "eap_ml"
     overwrite_log: bool = False
+
+
+@dataclass
+class ExpandingWindowConfig:
+    train_start_year: int = 1957
+    initial_train_end_year: int = 1974
+    val_start_year: int = 1975
+    val_end_year: int = 1986
+    test_start_year: int = 1987
+    test_end_year_original: int = 2016
+    test_end_year_extended: int = 2021
+    refit_frequency_years: int = 1
+
+
+@dataclass
+class ModelSelectionConfig:
+    run_all_models: bool = True
+    models_to_run: Optional[List[str]] = field(default=None)
