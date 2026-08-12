@@ -9,13 +9,14 @@ class ReproducibilityConfig:
 
 @dataclass
 class RunControlConfig:
-    dataset_creation_only: bool = True
+    dataset_creation_only: bool = False  # If True, stop after building complete_dataset
+    feature_panel_only: bool = False  # If True, stop after building feature_panel
 
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    force_rebuild_dataset: bool = False
-    force_refit_models: bool = False
+    force_rebuild_dataset: bool = False  # If True, rebuild complete_dataset even if cached
+    force_refit_models: bool = False  # If True, rebuild feature_panel even if cached
     save_complete_dataset: bool = True
     save_feature_panel: bool = True
     save_predictions: bool = True
@@ -35,7 +36,7 @@ class TimeframeConfig:
 class DataFilesConfig:
     datashare_path: str = "C:/Coding/Project/data/datashare.csv"
     crsp_monthly_path: str = "C:/Coding/Project/data/crsp_monthly.csv"
-    macro_path: str = "C:/Coding/Project/data/Data2024_monthly_goyal.csv" 
+    macro_path: str = "C:/Coding/Project/data/Data2024_monthly_goyal.csv"
     sic2_column: str = "sic2"  # Column name for industry codes in datashare.csv
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
         "permno",
@@ -56,8 +57,16 @@ class SplitConfig:
 
 @dataclass
 class DataRegimeConfig:
-    mode: str = "full"  # 'full' or 'coding'
-    coding_max_stocks_per_month: int = 500
+    """
+    Configuration for data regime mode.
+    
+    Modes:
+    - "full": Full dataset with all 94 characteristics, all macro interactions (~920 features)
+    - "coding_reduced": Minimal dataset with 500 constant stocks, 15 characteristics, only "d/p" interactions (~104 features)
+    """
+    mode: str = "full"  # 'full' or 'coding_reduced'
+    coding_reduced_stocks: int = 500  # For 'coding_reduced' mode: constant stocks across time
+    coding_reduced_macro_vars: List[str] = field(default_factory=lambda: ["d/p"])  # For 'coding_reduced' mode: which macro vars to interact with
     coding_keep_macro_count: int = 2
     coding_keep_industry_count: int = 10
     coding_include_interactions: bool = True
@@ -211,23 +220,55 @@ class ModelSelectionConfig:
     Configuration for which models to run in the expanding window.
     
     Gu et al. (2020) model specifications:
-    - OLS_3: HuberRegressor with 3 factors (size, value, momentum)
+    - OLS_3: HuberRegressor with 3 factors (size, value, momentum) - benchmark model
     - OLS_full: HuberRegressor with all features
-    - Huber: HuberRegressor with tuned hyperparameters
-    - PCR: Principal Component Regression
-    - PLS: Partial Least Squares
+    - Huber: HuberRegressor with tuned hyperparameters (epsilon, alpha)
+    - PCR: Principal Component Regression (PCA + HuberRegressor)
+    - PLS: Partial Least Squares regression
     - GBRT: Gradient Boosted Regression Trees
     - RandomForest: Random Forest
-    - MLP: Multi-Layer Perceptron
-    - LSTM: Long Short-Term Memory (only when run_all_models=True)
+    - MLP: Multi-Layer Perceptron (feedforward neural network)
+    - LSTM: Long Short-Term Memory (recurrent neural network, only when run_all_models=True)
     
-    Usage:
-    - Run only OLS-3 benchmark: models_to_run = ["OLS_3"]
-    - Run all models: run_all_models = True (models_to_run will be ignored)
-    - Run custom subset: models_to_run = ["OLS_3", "GBRT", "MLP"]
+    Default Setting:
+    - run_all_models = True (default): Runs ALL models including LSTM
+    - models_to_run = None (default): Ignored when run_all_models=True
+    
+    Usage Examples:
+    
+    1. Run all models (default - includes LSTM):
+       ```python
+       run_all_models = True
+       models_to_run = None  # or any value, will be ignored
+       ```
+       Models run: OLS_3, OLS_full, Huber, PCR, PLS, GBRT, RandomForest, MLP, LSTM
+    
+    2. Run only OLS-3 benchmark (fastest, for debugging):
+       ```python
+       run_all_models = False
+       models_to_run = ["OLS_3"]
+       ```
+       Models run: OLS_3 only
+    
+    3. Run custom subset (without LSTM):
+       ```python
+       run_all_models = False
+       models_to_run = ["OLS_3", "GBRT", "MLP"]
+       ```
+       Models run: OLS_3, GBRT, MLP
+    
+    4. Run all models except LSTM (faster than full ensemble):
+       ```python
+       run_all_models = False
+       models_to_run = ["OLS_3", "OLS_full", "Huber", "PCR", "PLS", "GBRT", "RandomForest", "MLP"]
+       ```
+    
+    Notes:
+    - LSTM is computationally expensive and only runs when run_all_models=True
+    - OLS_3 is the Gu et al. (2020) benchmark model and should always be included
+    - All "OLS" models use HuberRegressor (robust regression) as per Gu et al. (2020)
     """
-    run_all_models: bool = True  # If True, run all models (including LSTM)
+    run_all_models: bool = True  # If True, run all models (including LSTM) - DEFAULT
     models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
-    
     # Example: models_to_run = ["OLS_3"]  # Only OLS-3 benchmark
     # Example: models_to_run = ["OLS_3", "GBRT", "MLP"]  # Custom subset
