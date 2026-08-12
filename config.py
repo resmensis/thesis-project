@@ -33,9 +33,9 @@ class TimeframeConfig:
 
 @dataclass
 class DataFilesConfig:
-    datashare_path: str = "./data/datashare.csv"
-    crsp_monthly_path: str = "./data/crsp_monthly.csv"
-    macro_path: str = "./data/Data2024_monthly_goyal.csv" 
+    datashare_path: str = "C:/Coding/Project/data/datashare.csv"
+    crsp_monthly_path: str = "C:/Coding/Project/data/crsp_monthly.csv"
+    macro_path: str = "C:/Coding/Project/data/Data2024_monthly_goyal.csv" 
     sic2_column: str = "sic2"  # Column name for industry codes in datashare.csv
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
         "permno",
@@ -228,5 +228,6 @@ class ModelSelectionConfig:
     """
     run_all_models: bool = True  # If True, run all models (including LSTM)
     models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
+    
     # Example: models_to_run = ["OLS_3"]  # Only OLS-3 benchmark
     # Example: models_to_run = ["OLS_3", "GBRT", "MLP"]  # Custom subset
