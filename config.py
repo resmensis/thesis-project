@@ -9,7 +9,7 @@ class ReproducibilityConfig:
 
 @dataclass
 class RunControlConfig:
-    dataset_creation_only: bool = False  # If True, stop after building complete_dataset
+    dataset_creation_only: bool = True  # If True, stop after building complete_dataset
     feature_panel_only: bool = False  # If True, stop after building feature_panel
 
 @dataclass
