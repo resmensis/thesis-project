@@ -19,6 +19,9 @@ from sklearn.preprocessing import QuantileTransformer
 from typing import List, Tuple, Optional
 
 from config import DataRegimeConfig
+from io_utils import get_project_logger
+
+logger = get_project_logger()
 
 
 def build_feature_panel(
