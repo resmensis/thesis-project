@@ -1,0 +1,20 @@
+2026-08-12 12:37:59 - eap_ml - INFO - Starting experiment run.
+2026-08-12 12:37:59 - eap_ml - INFO - Random seed: 42
+2026-08-12 12:37:59 - eap_ml - INFO - Cache dir: cache
+2026-08-12 12:37:59 - eap_ml - INFO - Data regime: full
+2026-08-12 12:37:59 - eap_ml - INFO - Model selection: Running ALL models (including LSTM)
+2026-08-12 12:37:59 - eap_ml - INFO - Building complete dataset (cache disabled or force_rebuild).
+2026-08-12 12:37:59 - eap_ml - INFO - Building complete dataset from raw data sources.
+2026-08-12 12:39:19 - eap_ml - INFO - Loaded datashare: (4117300, 97)
+2026-08-12 12:39:21 - eap_ml - INFO - Loaded CRSP: (474268, 10)
+2026-08-12 12:39:21 - eap_ml - INFO - Loaded macro: (1848, 57)
+2026-08-12 12:45:14 - eap_ml - INFO - Starting experiment run.
+2026-08-12 12:45:14 - eap_ml - INFO - Random seed: 42
+2026-08-12 12:45:14 - eap_ml - INFO - Cache dir: cache
+2026-08-12 12:45:14 - eap_ml - INFO - Data regime: full
+2026-08-12 12:45:14 - eap_ml - INFO - Model selection: Running ALL models (including LSTM)
+2026-08-12 12:45:14 - eap_ml - INFO - Building complete dataset (cache disabled or force_rebuild).
+2026-08-12 12:45:14 - eap_ml - INFO - Building complete dataset from raw data sources.
+2026-08-12 12:46:28 - eap_ml - INFO - Loaded datashare: (4117300, 97)
+2026-08-12 12:46:29 - eap_ml - INFO - Loaded CRSP: (474268, 10)
+2026-08-12 12:46:29 - eap_ml - INFO - Loaded macro: (1848, 57)
