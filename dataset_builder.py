@@ -13,6 +13,9 @@ import numpy as np
 from typing import List, Dict, Optional
 
 from config import CharacteristicsFrequency
+from io_utils import get_project_logger
+
+logger = get_project_logger()
 
 
 def load_and_merge_data(
@@ -205,46 +208,6 @@ def build_complete_dataset(
     logger.info(f"Complete dataset built: {df.shape}")
     
     return df
-
-
-def reduce_observations_for_coding(
-    df: pd.DataFrame,
-    max_stocks_per_month: int = 500,
-    random_state: int = 42,
-) -> pd.DataFrame:
-    """
-    Reduce the dataset to max_stocks_per_month for coding mode.
-    
-    This samples up to max_stocks_per_month for each month independently,
-    which is different from coding_reduced mode where the same 500 stocks
-    are kept constant across all months.
-    
-    Args:
-        df: Complete dataset
-        max_stocks_per_month: Maximum number of stocks per month (default: 500)
-        random_state: Random seed for reproducibility (default: 42)
-    
-    Returns:
-        Reduced dataset with max_stocks_per_month per month
-    """
-    logger.info(f"Reducing to {max_stocks_per_month} stocks per month for coding mode.")
-    
-    # Set random state
-    rng = np.random.RandomState(random_state)
-    
-    # Sample max_stocks_per_month for each month
-    def sample_month(group):
-        if len(group) <= max_stocks_per_month:
-            return group
-        else:
-            sampled_idx = rng.choice(group.index, size=max_stocks_per_month, replace=False)
-            return group.loc[sampled_idx]
-    
-    reduced = df.groupby("yyyymm").apply(sample_month).reset_index(drop=True)
-    
-    logger.info(f"Reduced dataset: {reduced.shape} (from {df.shape})")
-    
-    return reduced
 
 
 def select_constant_stocks_for_coding_reduced(
