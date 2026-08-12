@@ -87,12 +87,18 @@ def setup_project_logger(
     if logger.handlers:
         logger.handlers.clear()
 
+    
+    file_level = _get_level(file_level_coding)
+    console_level = _get_level(console_level_coding)
+    
+    """
     if regime_mode == "coding":
         file_level = _get_level(file_level_coding)
         console_level = _get_level(console_level_coding)
     else:
         file_level = _get_level(file_level_full)
         console_level = _get_level(console_level_full)
+    """
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = Path(log_dir) / f"{logger_name}_{regime_mode}_{timestamp}.log"
