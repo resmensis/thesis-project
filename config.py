@@ -33,9 +33,9 @@ class TimeframeConfig:
 
 @dataclass
 class DataFilesConfig:
-    datashare_path: str = "./data/datashare.csv"
-    crsp_monthly_path: str = "./data/crsp_monthly.csv"
-    macro_path: str = "./data/Data2024_monthly_goyal.csv"
+    datashare_path: str = "C:/Coding/Project/data/datashare.csv"
+    crsp_monthly_path: str = "C:/Coding/Project/data/crsp_monthly.csv"
+    macro_path: str = "C:/Coding/Project/data/Data2024_monthly_goyal.csv"
     sic2_column: str = "sic2"
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
         "permno",
