@@ -1,0 +1,12 @@
+2026-08-13 17:19:19 | INFO | eap_ml | Logger initialized.
+2026-08-13 17:19:19 | INFO | eap_ml | Regime mode: full
+2026-08-13 17:19:19 | INFO | eap_ml | Log file: logs\eap_ml_full_20260813_171919.log
+2026-08-13 17:19:19 | INFO | eap_ml | Starting experiment run.
+2026-08-13 17:19:19 | INFO | eap_ml | Random seed: 42
+2026-08-13 17:19:19 | INFO | eap_ml | Cache dir: cache
+2026-08-13 17:19:19 | INFO | eap_ml | Data regime: full
+2026-08-13 17:19:19 | INFO | eap_ml | Model selection: Running ALL models (including LSTM)
+2026-08-13 17:19:19 | INFO | eap_ml | Building complete dataset.
+2026-08-13 17:19:19 | INFO | eap_ml.dataset_builder | Building complete dataset, output: cache/complete_dataset.parquet
+2026-08-13 17:19:19 | DEBUG | eap_ml.dataset_builder | Loading source datasets
+2026-08-13 17:19:19 | DEBUG | eap_ml.data_inputs | Loading datashare from C:/Coding/Project/data/datashare.csv
