@@ -11,21 +11,6 @@ from io_utils import maybe_load_parquet, save_parquet
 logger = logging.getLogger("eap_ml.dataset_builder")
 
 
-def get_datashare_characteristic_cols(ds: pd.DataFrame) -> list[str]:
-    """
-    Return the 94 characteristic columns from datashare.csv.
-
-    Assumptions on datashare.csv:
-    columns 3-96: 94 characteristics. 
-    column 1: permno
-    column 2: date
-    column 97: sic2 (to create industry dummies)
-
-    Since pandas is 0-based, that corresponds to positions 2:95.
-    """
-    return ds.columns[2:95].tolist()
-
-
 def compute_missingness_for_characteristics(
     df: pd.DataFrame,
     characteristic_cols: list[str],
@@ -124,12 +109,13 @@ def build_complete_dataset(
     out_path: str,
     possible_crsp_cols: list[str],
     possible_marco_cols: list[str],
+    cols_chara: list[str],
     cols_vars_monthly: list[str],
     cols_vars_quarterly: list[str],
     cols_vars_annual: list [str],
-    cache_enabled: bool = True,
-    force_rebuild: bool = False,
-    sic2_column: str = "sic2",    
+    cache_enabled: bool,
+    force_rebuild: bool,
+    sic2_column: str,    
 ):
     logger.info(f"Building complete dataset, output: {out_path}")
     
@@ -145,7 +131,7 @@ def build_complete_dataset(
     macro = load_macro_monthly(macro_path, possible_marco_cols)
 
     # Columns 3-96 in datashare.csv = 94 characteristics.
-    characteristic_cols = get_datashare_characteristic_cols(ds)
+    characteristic_cols = cols_chara
     logger.debug(f"Identified {len(characteristic_cols)} characteristic columns")
 
     logger.debug("Merging datashare with CRSP")

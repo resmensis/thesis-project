@@ -87,6 +87,7 @@ def main():
         force_rebuild=cache_cfg.force_rebuild_dataset,
         possible_crsp_cols=data_cfg.possible_crsp_cols,
         possible_marco_cols=data_cfg.possible_marco_cols,
+        cols_chara=data_cfg.chara_cols,
         cols_vars_monthly=freq_cfg.cols_vars_monthly,
         cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
         cols_vars_annual=freq_cfg.cols_vars_annual,
