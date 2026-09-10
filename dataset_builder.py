@@ -114,21 +114,18 @@ def build_complete_dataset(
     cols_vars_quarterly: list[str],
     cols_vars_annual: list [str],
     cache_enabled: bool,
-    force_rebuild: bool,
     sic2_column: str,    
 ):
     logger.info(f"Building complete dataset, output: {out_path}")
-    
-    if cache_enabled and not force_rebuild:
-        cached = maybe_load_parquet(out_path, enabled=True)
-        if cached is not None:
-            logger.info(f"Loading cached complete dataset from {out_path}")
-            return cached
+
 
     logger.debug("Loading source datasets")
+    """
     ds = load_datashare(datashare_path)
+    """
     crsp = load_crsp_monthly(crsp_path, possible_crsp_cols)
     macro = load_macro_monthly(macro_path, possible_marco_cols)
+    ds = load_datashare(datashare_path)
 
     # Columns 3-96 in datashare.csv = 94 characteristics.
     characteristic_cols = cols_chara
@@ -201,15 +198,17 @@ def build_complete_dataset(
 
     # Build next-month excess return target after merge/imputation stage.
     logger.debug("Building lead excess return target")
+
     merged["excess_ret_lead"] = merged.groupby("permno")["ret_total"].shift(-1)
 
-
+    """
     if "rf" in merged.columns:
         if merged["rf"].abs().median() > 1:
             logger.debug("Converting rf from percentage to decimal")
             merged["rf"] = merged["rf"] / 100.0
         merged["rf_lead"] = merged.groupby("permno")["rf"].shift(-1)
-        merged["excess_ret_lead"] = merged["excess_ret_lead"] - merged["rf_lead"]
+        merged["excess_ret_lead"] = merged["excess_ret_lead"] - merged["rf_lead"]    
+    """
 
 
     # Build shifts for monthly, quarterly and annual characteristcs
@@ -230,27 +229,3 @@ def build_complete_dataset(
     logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)
     return merged
-
-
-def reduce_observations_for_coding(
-    df: pd.DataFrame,
-    max_stocks_per_month: int,
-    random_state: int = 42,
-):
-    logger.info(f"Reducing observations for coding mode: max {max_stocks_per_month} stocks per month")
-    rng = np.random.RandomState(random_state)
-
-    def _sample_month(g):
-        if len(g) <= max_stocks_per_month:
-            return g
-        idx = rng.choice(g.index.to_numpy(), size=max_stocks_per_month, replace=False)
-        return g.loc[idx].sort_values("permno")
-
-    out = (
-        df.groupby("date", group_keys=False)
-        .apply(_sample_month)
-        .sort_values(["date", "permno"])
-        .reset_index(drop=True)
-    )
-    logger.info(f"Reduced dataset: {out.shape}")
-    return out

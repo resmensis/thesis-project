@@ -90,7 +90,7 @@ def select_coding_features(df: pd.DataFrame, all_char_cols, macro_cols, industry
     logger.debug(f"Selected {len(selected_char_cols)} char, {len(selected_macro_cols)} macro, {len(selected_industry_cols)} industry cols")
     return {"char_cols": selected_char_cols, "macro_cols": selected_macro_cols, "industry_cols": selected_industry_cols}
 
-
+"""
 def winsorize_by_month(df: pd.DataFrame, cols, lower=0.01, upper=0.99):
     logger.debug(f"Winsorizing {len(cols)} columns at [{lower}, {upper}]")
     out = df.copy()
@@ -101,7 +101,7 @@ def winsorize_by_month(df: pd.DataFrame, cols, lower=0.01, upper=0.99):
             g[c] = g[c].clip(lo, hi)
         return g
     return out.groupby("date", group_keys=False).apply(_clip)
-
+"""
 
 def scale_chars_cross_sectionally_by_month(
     df: pd.DataFrame,
@@ -157,8 +157,11 @@ def build_feature_panel(df: pd.DataFrame, regime_config, include_macro_interacti
     industry_cols = [c for c in out.columns if c.startswith("ind_")]
     logger.debug(f"Identified {len(all_char_cols)} char, {len(macro_cols)} macro, {len(industry_cols)} industry cols")
 
-    # Step 1: winsorize raw characteristics by month
-    out = winsorize_by_month(out, all_char_cols, lower=0.01, upper=0.99)
+    """
+     # Step 1: winsorize raw characteristics by month
+    out = winsorize_by_month(out, all_char_cols, lower=0.01, upper=0.99)   
+    """
+
 
     # Step 2: scale the 94 characteristics cross-sectionally month by month to [-1, 1]
     out = scale_chars_cross_sectionally_by_month(

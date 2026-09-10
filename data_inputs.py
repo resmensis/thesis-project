@@ -101,6 +101,7 @@ def load_datashare(path: str) -> pd.DataFrame:
     df.columns = df.columns.str.lower()
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
+    logger.debug("Standardizing date of datashare")
     df = standardize_to_monthly(df, "date")
     df["permno"] = pd.to_numeric(df["permno"], errors="coerce").astype("Int64")
     logger.debug(f"Datashare loaded: {len(df)} rows, {len(df.columns)} columns")
@@ -118,10 +119,12 @@ def load_crsp_monthly(
     df = df.loc[:, df.columns.isin(cols)]
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
+    logger.debug("Standardizing date of CRSP")
     df = standardize_to_monthly(df, "date")
     for col in ["permno", "ret", "dlret"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    logger.debug("Creating ret_total")
     df["dlret"] = df["dlret"].fillna(0.0)
     df["ret"] = df["ret"].fillna(0.0)
     df["ret_total"] = (1.0 + df["ret"]) * (1.0 + df["dlret"]) - 1.0
@@ -140,6 +143,7 @@ def load_macro_monthly(
     df = df.loc[:, df.columns.isin(cols)]
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
+    logger.debug("Standardizing date of Macro")
     df = standardize_to_monthly(df, "date")
     logger.debug(f"Macro loaded: {len(df)} rows, columns: {list(df.columns)}")
     return df

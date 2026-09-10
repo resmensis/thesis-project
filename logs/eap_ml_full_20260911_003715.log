@@ -1,0 +1,33 @@
+2026-09-11 00:37:15 | INFO | eap_ml | Logger initialized.
+2026-09-11 00:37:15 | INFO | eap_ml | Regime mode: full
+2026-09-11 00:37:15 | INFO | eap_ml | Log file: logs\eap_ml_full_20260911_003715.log
+2026-09-11 00:37:15 | INFO | eap_ml | Starting experiment run.
+2026-09-11 00:37:15 | INFO | eap_ml | Random seed: 42
+2026-09-11 00:37:15 | INFO | eap_ml | Cache dir: cache
+2026-09-11 00:37:15 | INFO | eap_ml | Data regime: full
+2026-09-11 00:37:15 | INFO | eap_ml | Model selection: Running ALL models (including LSTM)
+2026-09-11 00:37:15 | INFO | eap_ml | Building complete dataset.
+2026-09-11 00:37:15 | INFO | eap_ml | Building complete dataset (no cache found).
+2026-09-11 00:37:15 | INFO | eap_ml.dataset_builder | Building complete dataset, output: cache/complete_dataset.parquet
+2026-09-11 00:37:15 | DEBUG | eap_ml.dataset_builder | Loading source datasets
+2026-09-11 00:37:15 | DEBUG | eap_ml.data_inputs | Loading CRSP monthly data from C:/Coding/Project/data/crsp_monthly.csv
+2026-09-11 00:37:22 | DEBUG | eap_ml.data_inputs | Standardizing date of CRSP
+2026-09-11 00:37:35 | DEBUG | eap_ml.data_inputs | Creating ret_total
+2026-09-11 00:37:35 | DEBUG | eap_ml.data_inputs | CRSP loaded: 4594389 rows
+2026-09-11 00:37:35 | DEBUG | eap_ml.data_inputs | Loading macro data from C:/Coding/Project/data/Data2024_monthly_goyal.csv
+2026-09-11 00:37:35 | DEBUG | eap_ml.data_inputs | Standardizing date of Macro
+2026-09-11 00:37:35 | DEBUG | eap_ml.data_inputs | Macro loaded: 1848 rows, columns: ['date', 'tbl', 'd/p', 'e/p', 'b/m', 'tms', 'dfy', 'ntis', 'svar']
+2026-09-11 00:37:35 | DEBUG | eap_ml.data_inputs | Loading datashare from C:/Coding/Project/data/datashare.csv
+2026-09-11 00:38:51 | DEBUG | eap_ml.data_inputs | Standardizing date of datashare
+2026-09-11 00:39:02 | DEBUG | eap_ml.data_inputs | Datashare loaded: 4117300 rows, 97 columns
+2026-09-11 00:39:02 | DEBUG | eap_ml.dataset_builder | Identified 94 characteristic columns
+2026-09-11 00:39:02 | DEBUG | eap_ml.dataset_builder | Merging datashare with CRSP
+2026-09-11 00:39:14 | DEBUG | eap_ml.dataset_builder | Merging with macro data
+2026-09-11 00:40:15 | DEBUG | eap_ml.dataset_builder | Saved missingness before imputation: cache/complete_dataset_missingness_before.csv, cache/complete_dataset_missingness_before.jpg
+2026-09-11 00:40:15 | INFO | eap_ml.dataset_builder | Imputing missing characteristics using monthly cross-sectional medians
+2026-09-11 00:40:56 | DEBUG | eap_ml.dataset_builder | Saved missingness after imputation: cache/complete_dataset_missingness_after.csv, cache/complete_dataset_missingness_after.jpg
+2026-09-11 00:40:57 | DEBUG | eap_ml.dataset_builder | Saved missingness comparison plot: cache/complete_dataset_missingness_comparison.jpg
+2026-09-11 00:40:57 | DEBUG | eap_ml.dataset_builder | Building lead excess return target
+2026-09-11 00:40:57 | DEBUG | eap_ml.dataset_builder | Building characteristic shifts
+2026-09-11 00:41:34 | INFO | eap_ml.dataset_builder | Complete dataset built: (4084487, 110)
+2026-09-11 00:42:11 | INFO | eap_ml | Complete dataset shape: (4084487, 110)

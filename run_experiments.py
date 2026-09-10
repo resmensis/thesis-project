@@ -18,7 +18,7 @@ from config import (
 )
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
-from dataset_builder import build_complete_dataset, reduce_observations_for_coding
+from dataset_builder import build_complete_dataset
 from sample_splits import subset_timeframe, chronological_split
 from features import build_feature_panel
 from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
@@ -78,21 +78,50 @@ def main():
     # 1. Build or load complete dataset
     # ------------------------------------------------------------------
     logger.info("Building complete dataset.")
-    complete = build_complete_dataset(
-        datashare_path=data_cfg.datashare_path,
-        crsp_path=data_cfg.crsp_monthly_path,
-        macro_path=data_cfg.macro_path,
-        out_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet",
-        cache_enabled=cache_cfg.enabled,
-        force_rebuild=cache_cfg.force_rebuild_dataset,
-        possible_crsp_cols=data_cfg.possible_crsp_cols,
-        possible_marco_cols=data_cfg.possible_marco_cols,
-        cols_chara=data_cfg.chara_cols,
-        cols_vars_monthly=freq_cfg.cols_vars_monthly,
-        cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-        cols_vars_annual=freq_cfg.cols_vars_annual,
-        sic2_column=data_cfg.sic2_column,
-    )
+
+    complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
+
+    if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
+        cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
+        
+        if cached_dataset is not None:
+            logger.info(f"Loading cached dataset from {complete_dataset_path}")
+            complete = cached_dataset
+        else:
+            logger.info("Building complete dataset (no cache found).")
+            complete = build_complete_dataset(
+                datashare_path=data_cfg.datashare_path,
+                crsp_path=data_cfg.crsp_monthly_path,
+                macro_path=data_cfg.macro_path,
+                out_path=complete_dataset_path,
+                cache_enabled=cache_cfg.enabled,
+                possible_crsp_cols=data_cfg.possible_crsp_cols,
+                possible_marco_cols=data_cfg.possible_marco_cols,
+                cols_chara=data_cfg.chara_cols,
+                cols_vars_monthly=freq_cfg.cols_vars_monthly,
+                cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
+                cols_vars_annual=freq_cfg.cols_vars_annual,
+                sic2_column=data_cfg.sic2_column,
+            )
+    else:
+        logger.info("Building complete dataset (cache disabled or force_refit).")
+        complete = build_complete_dataset(
+            datashare_path=data_cfg.datashare_path,
+            crsp_path=data_cfg.crsp_monthly_path,
+            macro_path=data_cfg.macro_path,
+            out_path=complete_dataset_path,
+            cache_enabled=cache_cfg.enabled,
+            possible_crsp_cols=data_cfg.possible_crsp_cols,
+            possible_marco_cols=data_cfg.possible_marco_cols,
+            cols_chara=data_cfg.chara_cols,
+            cols_vars_monthly=freq_cfg.cols_vars_monthly,
+            cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
+            cols_vars_annual=freq_cfg.cols_vars_annual,
+            sic2_column=data_cfg.sic2_column,
+        )
+
+
+
 
     logger.info(f"Complete dataset shape: {complete.shape}")
 
@@ -102,10 +131,7 @@ def main():
         print(f"Complete dataset created and cached at: {cache_cfg.cache_dir}/complete_dataset.parquet")
         return
 
-    if regime_cfg.mode == "coding":
-        logger.info("Applying coding-mode sampling reduction.")
-        complete = reduce_observations_for_coding(complete, max_stocks_per_month=regime_cfg.coding_max_stocks_per_month, random_state=repro_cfg.random_state)
-
+    
     # ------------------------------------------------------------------
     # 2. Build or load feature panel
     # ------------------------------------------------------------------
