@@ -28,13 +28,10 @@ def infer_macro_cols(df: pd.DataFrame):
     return candidates
 
 
-def create_industry_dummies(df: pd.DataFrame, max_dummies: int = 74):
-    logger.debug(f"Creating industry dummies, max {max_dummies}")
+def create_industry_dummies(df: pd.DataFrame, sic2_column: str):
+    logger.debug(f"Creating industry dummies.")
     out = df.copy()
-    counts = out["industry_code"].value_counts()
-    keep = counts.index[:max_dummies].tolist()
-    out["industry_code_grp"] = np.where(out["industry_code"].isin(keep), out["industry_code"], "OTHER")
-    dummies = pd.get_dummies(out["industry_code_grp"], prefix="ind", dtype=float)
+    dummies = pd.get_dummies(out[sic2_column], prefix="ind", dtype=float)
     logger.debug(f"Created {len(dummies.columns)} industry dummies")
     return pd.concat([out, dummies], axis=1)
 
@@ -148,9 +145,14 @@ def scale_chars_cross_sectionally_by_month(
     return out
 
 
-def build_feature_panel(df: pd.DataFrame, regime_config, include_macro_interactions=True):
+def build_feature_panel(
+    df: pd.DataFrame,
+    sic2_column: str,
+    regime_config,
+    include_macro_interactions=True
+):
     logger.info(f"Building feature panel, mode={regime_config.mode}")
-    out = create_industry_dummies(df, max_dummies=74)
+    out = create_industry_dummies(df, sic2_column)
 
     all_char_cols = infer_characteristic_cols(out)
     macro_cols = infer_macro_cols(out)

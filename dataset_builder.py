@@ -113,8 +113,7 @@ def build_complete_dataset(
     cols_vars_monthly: list[str],
     cols_vars_quarterly: list[str],
     cols_vars_annual: list [str],
-    cache_enabled: bool,
-    sic2_column: str,    
+    cache_enabled: bool    
 ):
     logger.info(f"Building complete dataset, output: {out_path}")
 
@@ -133,7 +132,7 @@ def build_complete_dataset(
 
     logger.debug("Merging datashare with CRSP")
     merged = ds.merge(
-        crsp[["permno", "date", "ret", "dlret", "ret_total"]],
+        crsp[["permno", "date", "ret_total"]],
         on=["permno", "date"],
         how="inner",
         validate="one_to_one",
@@ -141,7 +140,10 @@ def build_complete_dataset(
 
     logger.debug("Merging with macro data")
     merged = merged.merge(macro, on="date", how="left")
+
+    """
     merged["industry_code"] = merged[sic2_column].astype("string").fillna("UNK")
+    """
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
 
     # ------------------------------------------------------------------
@@ -224,7 +226,9 @@ def build_complete_dataset(
         elif i in cols_vars_annual:
             merged[i] = grouped[i].shift(-6)
 
-
+    """
+    merged = merged.dropna(subset=["excess_ret_lead"])
+    """
     merged = merged.dropna(subset=["excess_ret_lead"])
     logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)

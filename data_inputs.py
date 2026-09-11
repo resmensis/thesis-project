@@ -9,91 +9,98 @@ from typing import Any
 logger = logging.getLogger("eap_ml.data_inputs")
 
 
-def standardize_to_monthly(df: pd.DataFrame, date_col: str = 'date') -> pd.DataFrame:
+import pandas as pd
+
+
+def standardize_to_monthly(
+    df: pd.DataFrame,
+    date_col: str = "date",
+    *,
+    copy: bool = False,
+) -> pd.DataFrame:
     """
-    Standardize date column to YYYY-MM format (first day of month).
-    
-    Handles two input formats efficiently:
-    - YYYYMM (e.g., 196001, 196012)
-    - YYYYMMDD (e.g., 19600101, 19601231)
-    
-    All dates are converted to the first day of the month (YYYY-MM-01).
-    
+    Convert one consistently encoded date column to a monthly Period column.
+
+    Supported input formats per dataset:
+    - YYYYMM:   198605  -> Period('1986-05', 'M')
+    - YYYYMMDD: 19860530 -> Period('1986-05', 'M')
+
+    The function detects the format once and parses the full column vectorially.
+    It is designed for large datasets: it does not use row-wise apply().
+
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame with date column to standardize
-    date_col : str, default 'date'
-        Name of the date column
-    
+        Input data.
+    date_col : str, default "date"
+        Date-column name.
+    copy : bool, default False
+        If True, return a copy. If False, modify df in place.
+
     Returns
     -------
     pd.DataFrame
-        DataFrame with standardized date column (datetime64[ns] dtype)
-    
-    Example
-    -------
-    >>> df = pd.DataFrame({'date': [196001, 196012, 19610115, 19611231]})
-    >>> df = standardize_to_monthly(df, 'date')
-    >>> df['date']
-    0   1960-01-01
-    1   1960-12-01
-    2   1961-01-01
-    3   1961-12-01
-    Name: date, dtype: datetime64[ns]
-    """
-    df = df.copy()
-    dates = df[date_col]
-    
-    # Convert to string for uniform processing
-    date_str = dates.astype(str).str.strip()
-    
-    # Detect format by string length
-    # YYYYMM = 6 chars, YYYYMMDD = 8 chars
-    is_monthly = date_str.str.len() == 6
-    is_daily = date_str.str.len() == 8
-    
-    result = pd.Series(index=dates.index, dtype='datetime64[ns]')
-    
-    # Process YYYYMM format (6 digits)
-    if is_monthly.any():
-        monthly_dates = date_str.loc[is_monthly]
-        # Parse as YYYY-MM by inserting dash
-        result.loc[is_monthly] = pd.to_datetime(
-            monthly_dates.str[:4] + '-' + monthly_dates.str[4:],
-            format='%Y-%m'
-        )
-    
-    # Process YYYYMMDD format (8 digits)
-    if is_daily.any():
-        daily_dates = date_str.loc[is_daily]
-        # Parse full date then convert to month start
-        result.loc[is_daily] = pd.to_datetime(
-            daily_dates,
-            format='%Y%m%d'
-        ).dt.to_period('M').dt.to_timestamp('M', how='start')
-    
-    # Handle any remaining values (try generic parsing)
-    mask = result.isna() & dates.notna()
-    if mask.any():
-        remaining = dates.loc[mask]
-        # Try YYYYMMDD first
-        parsed = pd.to_datetime(remaining, format='%Y%m%d', errors='coerce')
-        # For failures, try YYYYMM
-        failed_mask = parsed.isna()
-        if failed_mask.any():
-            parsed.loc[failed_mask] = pd.to_datetime(
-                remaining.loc[failed_mask].astype(str).str[:4] + '-' + 
-                remaining.loc[failed_mask].astype(str).str[4:6],
-                format='%Y-%m',
-                errors='coerce'
-            )
-        # Convert to month start
-        result.loc[mask] = parsed.dt.to_period('M').dt.to_timestamp('M', how='start')
-    
-    df[date_col] = result
-    return df
+        DataFrame whose date_col has dtype period[M].
 
+    Raises
+    ------
+    KeyError
+        If date_col is absent.
+    ValueError
+        If the column is empty, contains no valid date values, contains
+        unsupported values, or mixes YYYYMM and YYYYMMDD formats.
+    """
+    if date_col not in df.columns:
+        raise KeyError(f"Column '{date_col}' not found in DataFrame.")
+
+    if copy:
+        df = df.copy()
+
+    raw = df[date_col]
+
+    # Preserve missing values while giving every observed entry one uniform form.
+    date_str = raw.astype("string").str.strip()
+
+    # `198605.0` can arise if a numeric CSV column contains missing values.
+    date_str = date_str.str.replace(r"\.0$", "", regex=True)
+
+    non_missing = date_str.dropna()
+    if non_missing.empty:
+        raise ValueError(f"Column '{date_col}' contains no non-missing dates.")
+
+    lengths = non_missing.str.len()
+    unique_lengths = set(lengths.unique())
+
+    if unique_lengths == {6}:
+        parsed = pd.to_datetime(date_str, format="%Y%m", errors="coerce")
+
+    elif unique_lengths == {8}:
+        parsed = pd.to_datetime(date_str, format="%Y%m%d", errors="coerce")
+
+    elif unique_lengths.issubset({6, 8}):
+        raise ValueError(
+            f"Column '{date_col}' mixes YYYYMM and YYYYMMDD formats. "
+            "Each dataset must use exactly one format."
+        )
+
+    else:
+        bad_examples = non_missing.loc[~lengths.isin([6, 8])].head(5).tolist()
+        raise ValueError(
+            f"Unsupported date format in '{date_col}'. "
+            f"Expected YYYYMM or YYYYMMDD; examples: {bad_examples}"
+        )
+
+    invalid = raw.notna() & parsed.isna()
+    if invalid.any():
+        bad_examples = date_str.loc[invalid].head(5).tolist()
+        raise ValueError(
+            f"Invalid calendar dates in '{date_col}'; examples: {bad_examples}"
+        )
+
+    # Monthly key: suitable for matching, grouping, and monthly forecasts.
+    df[date_col] = parsed.dt.to_period("M")
+
+    return df
 
 def load_datashare(path: str) -> pd.DataFrame:
     logger.debug(f"Loading datashare from {path}")
@@ -102,7 +109,7 @@ def load_datashare(path: str) -> pd.DataFrame:
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
     logger.debug("Standardizing date of datashare")
-    df = standardize_to_monthly(df, "date")
+    df = standardize_to_monthly(df, date_col="date")
     df["permno"] = pd.to_numeric(df["permno"], errors="coerce").astype("Int64")
     logger.debug(f"Datashare loaded: {len(df)} rows, {len(df.columns)} columns")
     return df
@@ -120,7 +127,7 @@ def load_crsp_monthly(
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
     logger.debug("Standardizing date of CRSP")
-    df = standardize_to_monthly(df, "date")
+    df = standardize_to_monthly(df, date_col="date")
     for col in ["permno", "ret", "dlret"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -144,6 +151,6 @@ def load_macro_monthly(
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})
     logger.debug("Standardizing date of Macro")
-    df = standardize_to_monthly(df, "date")
+    df = standardize_to_monthly(df, date_col="date")
     logger.debug(f"Macro loaded: {len(df)} rows, columns: {list(df.columns)}")
     return df

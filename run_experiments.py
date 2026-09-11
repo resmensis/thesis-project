@@ -100,8 +100,7 @@ def main():
                 cols_chara=data_cfg.chara_cols,
                 cols_vars_monthly=freq_cfg.cols_vars_monthly,
                 cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-                cols_vars_annual=freq_cfg.cols_vars_annual,
-                sic2_column=data_cfg.sic2_column,
+                cols_vars_annual=freq_cfg.cols_vars_annual
             )
     else:
         logger.info("Building complete dataset (cache disabled or force_refit).")
@@ -116,8 +115,7 @@ def main():
             cols_chara=data_cfg.chara_cols,
             cols_vars_monthly=freq_cfg.cols_vars_monthly,
             cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-            cols_vars_annual=freq_cfg.cols_vars_annual,
-            sic2_column=data_cfg.sic2_column,
+            cols_vars_annual=freq_cfg.cols_vars_annual
         )
 
 
@@ -148,12 +146,12 @@ def main():
             feature_cols = cached_cols
         else:
             logger.info("Building feature panel (no cache found).")
-            feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
+            feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, regime_config=regime_cfg, include_macro_interactions=True)
             save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
             save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
     else:
         logger.info("Building feature panel (cache disabled or force_refit).")
-        feature_panel, feature_cols = build_feature_panel(complete, regime_config=regime_cfg, include_macro_interactions=True)
+        feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, regime_config=regime_cfg, include_macro_interactions=True)
         save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
         save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
     

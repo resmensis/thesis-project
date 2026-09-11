@@ -1,0 +1,10 @@
+2026-09-11 03:27:21 | INFO | eap_ml | Logger initialized.
+2026-09-11 03:27:21 | INFO | eap_ml | Regime mode: full
+2026-09-11 03:27:21 | INFO | eap_ml | Log file: logs\eap_ml_full_20260911_032721.log
+2026-09-11 03:27:21 | INFO | eap_ml | Starting experiment run.
+2026-09-11 03:27:21 | INFO | eap_ml | Random seed: 42
+2026-09-11 03:27:21 | INFO | eap_ml | Cache dir: cache
+2026-09-11 03:27:21 | INFO | eap_ml | Data regime: full
+2026-09-11 03:27:21 | INFO | eap_ml | Model selection: Running ALL models (including LSTM)
+2026-09-11 03:27:21 | INFO | eap_ml | Building complete dataset.
+2026-09-11 03:27:21 | INFO | eap_ml | Building complete dataset (cache disabled or force_refit).
