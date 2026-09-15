@@ -131,7 +131,6 @@ def load_crsp_monthly(
     for col in ["permno", "ret", "dlret"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-
     logger.debug(f"CRSP loaded: {len(df)} rows")
     return df
 

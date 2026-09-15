@@ -102,6 +102,57 @@ def impute_characteristics_by_month_cross_sectional_median(
     return out
 
 
+import numpy as np
+import pandas as pd
+
+def summarize_columns(
+    df: pd.DataFrame,
+    characteristic_cols: list[str],
+):
+    """
+    data_cfg: object with attribute 'chara_cols' (list-like)
+    complete: pandas DataFrame sorted by 'date' upstream or this function will sort it
+    Returns: pandas DataFrame with summary per column
+    """
+    summary = []
+    cols_chara = characteristic_cols
+    df = df.sort_values("date")
+
+    for col in cols_chara:
+        s = df[col]
+        dtype = s.dtype
+
+        first_valid_index = s.first_valid_index()
+        first_value = s.loc[first_valid_index] if first_valid_index is not None else None
+        first_value_type = type(first_value).__name__ if first_value is not None else None
+        first_year_month = df.loc[first_valid_index, "date"] if first_valid_index is not None else None
+
+        last_valid_index = s.last_valid_index()
+        last_year_month = df.loc[last_valid_index, "date"] if last_valid_index is not None else None
+
+        if np.issubdtype(dtype, np.number):
+            col_min = s.min(skipna=True)
+            col_max = s.max(skipna=True)
+            col_range = col_max - col_min
+        else:
+            col_min = col_max = col_range = None
+
+        summary.append({
+            "column": col,
+            "dtype": str(dtype),
+            "first_value": first_value,
+            "first_value_type": first_value_type,
+            "first_year_month": first_year_month,
+            "last_year_month": last_year_month,
+            "min": col_min,
+            "max": col_max,
+            "range": col_range,
+        })
+
+    summary_df = pd.DataFrame(summary)
+    return summary_df
+
+
 def build_complete_dataset(
     datashare_path: str,
     crsp_path: str,
@@ -133,7 +184,7 @@ def build_complete_dataset(
 
     logger.debug("Merging datashare with CRSP")
     merged = ds.merge(
-        crsp[["permno", "date", "ret_total"]],
+        crsp[["permno", "date", "ret", "dlret"]],
         on=["permno", "date"],
         how="inner",
         validate="one_to_one",
@@ -147,50 +198,65 @@ def build_complete_dataset(
     """
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
 
-    # ------------------------------------------------------------------
-    # 1. Missingness before imputation
-    # ------------------------------------------------------------------
-    missing_before = compute_missingness_for_characteristics(merged, characteristic_cols)
 
-    before_csv = f"{descriptives_path}_missingness_before.csv"
-    before_jpg = f"{descriptives_path}_missingness_before.jpg"
+    # ------------------------------------------------------------------
+    # ret_total
+    # ------------------------------------------------------------------
+    logger.debug("Creating ret_total")
 
+    has_return_data = (merged["ret"].notna() | merged["dlret"].notna())
+
+    merged["ret_total"] = (
+        (1.0 + merged["ret"].fillna(0.0))
+        * (1.0 + merged["dlret"].fillna(0.0))
+        - 1.0
+    ).where(has_return_data)    
+
+    # ------------------------------------------------------------------
+    # Missingness visualisation and imputation
+    # ------------------------------------------------------------------
+    cols_chara_and_ret_total = characteristic_cols + ["ret_total"]
+
+    # Visualisation before imputation
+    missing_before = compute_missingness_for_characteristics(merged, cols_chara_and_ret_total)
+
+    before_csv = f"{descriptives_path}/charas_missingness_before.csv"
     missing_before.to_csv(before_csv, index=False)
+
+    """
+    before_jpg = f"{descriptives_path}/charas_missingness_before.jpg"
     save_missingness_lineplot(
         missing_before,
         before_jpg,
         title="Missing data percentage per characteristic (before imputation)",
         color="red",
     )
-    logger.debug(f"Saved missingness before imputation: {before_csv}, {before_jpg}")
+    """
+    logger.debug(f"Saved missingness before imputation: {before_csv}")
 
-    # ------------------------------------------------------------------
-    # 2. Impute missing characteristics using monthly cross-sectional medians
-    # ------------------------------------------------------------------
+    # Imputation
     logger.info("Imputing missing characteristics using monthly cross-sectional medians")
-    merged = impute_characteristics_by_month_cross_sectional_median(merged, characteristic_cols)
+    merged = impute_characteristics_by_month_cross_sectional_median(merged, cols_chara_and_ret_total)
 
-    # ------------------------------------------------------------------
-    # 3. Missingness after imputation
-    # ------------------------------------------------------------------
-    missing_after = compute_missingness_for_characteristics(merged, characteristic_cols)
+    # Visualisation after imputation
+    missing_after = compute_missingness_for_characteristics(merged, cols_chara_and_ret_total)
 
-    after_csv = f"{descriptives_path}_missingness_after.csv"
-    after_jpg = f"{descriptives_path}_missingness_after.jpg"
-
+    after_csv = f"{descriptives_path}/charas_missingness_after.csv"
     missing_after.to_csv(after_csv, index=False)
+
+    """
+    after_jpg = f"{descriptives_path}/charas_missingness_after.jpg"   
     save_missingness_lineplot(
         missing_after,
         after_jpg,
         title="Missing data percentage per characteristic (after imputation)",
         color="green",
-    )
-    logger.debug(f"Saved missingness after imputation: {after_csv}, {after_jpg}")
+    )    
+    """
+    logger.debug(f"Saved missingness after imputation: {after_csv}")
 
-    # ------------------------------------------------------------------
-    # 4. Comparison plot (before vs after)
-    # ------------------------------------------------------------------
-    comparison_jpg = f"{descriptives_path}_missingness_comparison.jpg"
+    # Comparison plot
+    comparison_jpg = f"{descriptives_path}/charas_missingness_comparison.jpg"
     save_missingness_comparison_plot(
         missing_before,
         missing_after,
@@ -200,35 +266,14 @@ def build_complete_dataset(
     logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
 
 
-
-    # Build ret_total
-    logger.debug("Creating ret_total")
-
-    has_return_data = (merged["ret"].notna() | merged["dlret"].notna())
-
-    merged["ret_total"] = (
-        (1.0 + merged["ret"].fillna(0.0))
-        * (1.0 + merged["dlret"].fillna(0.0))
-        - 1.0
-    ).where(has_return_data)
-
-
-
-
+    # ------------------------------------------------------------------
+    # Temporal shifts 
+    # ------------------------------------------------------------------
 
     # Build next-month excess return target after merge/imputation stage.
     logger.debug("Building lead excess return target")
 
     merged["excess_ret_lead"] = merged.groupby("permno")["ret_total"].shift(-1)
-
-    """
-    if "rf" in merged.columns:
-        if merged["rf"].abs().median() > 1:
-            logger.debug("Converting rf from percentage to decimal")
-            merged["rf"] = merged["rf"] / 100.0
-        merged["rf_lead"] = merged.groupby("permno")["rf"].shift(-1)
-        merged["excess_ret_lead"] = merged["excess_ret_lead"] - merged["rf_lead"]    
-    """
 
 
     # Build shifts for monthly, quarterly and annual characteristcs
@@ -244,9 +289,11 @@ def build_complete_dataset(
         elif i in cols_vars_annual:
             merged[i] = grouped[i].shift(-6)
 
-    """
-    merged = merged.dropna(subset=["excess_ret_lead"])
-    """
+    # ------------------------------------------------------------------
+    # Summary 
+    # ------------------------------------------------------------------
+
+
     
     logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)

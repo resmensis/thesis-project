@@ -81,7 +81,7 @@ def main():
     logger.info("Building complete dataset.")
 
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
-    descriptives_path=f"{cache_cfg.descriptives_dir}"
+    descriptives_path=cache_cfg.descriptives_dir
 
     if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
         cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
