@@ -56,6 +56,7 @@ def main():
     )
 
     logger.info("Starting experiment run.")
+    random_state=repro_cfg.random_state
     logger.info(f"Random seed: {repro_cfg.random_state}")
     logger.info(f"Cache dir: {cache_cfg.cache_dir}")
     logger.info(f"Data regime: {regime_cfg.mode}")
@@ -80,6 +81,7 @@ def main():
     logger.info("Building complete dataset.")
 
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
+    descriptives_path=f"{cache_cfg.descriptives_dir}"
 
     if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
         cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
@@ -94,6 +96,7 @@ def main():
                 crsp_path=data_cfg.crsp_monthly_path,
                 macro_path=data_cfg.macro_path,
                 out_path=complete_dataset_path,
+                descriptives_path=descriptives_path,
                 cache_enabled=cache_cfg.enabled,
                 possible_crsp_cols=data_cfg.possible_crsp_cols,
                 possible_marco_cols=data_cfg.possible_marco_cols,
@@ -109,6 +112,7 @@ def main():
             crsp_path=data_cfg.crsp_monthly_path,
             macro_path=data_cfg.macro_path,
             out_path=complete_dataset_path,
+            descriptives_path=descriptives_path,
             cache_enabled=cache_cfg.enabled,
             possible_crsp_cols=data_cfg.possible_crsp_cols,
             possible_marco_cols=data_cfg.possible_marco_cols,
@@ -117,8 +121,6 @@ def main():
             cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
             cols_vars_annual=freq_cfg.cols_vars_annual
         )
-
-
 
 
     logger.info(f"Complete dataset shape: {complete.shape}")
@@ -146,12 +148,12 @@ def main():
             feature_cols = cached_cols
         else:
             logger.info("Building feature panel (no cache found).")
-            feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, regime_config=regime_cfg, include_macro_interactions=True)
+            feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, random_state=random_state, regime_config=regime_cfg, include_macro_interactions=True)
             save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
             save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
     else:
         logger.info("Building feature panel (cache disabled or force_refit).")
-        feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, regime_config=regime_cfg, include_macro_interactions=True)
+        feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, random_state=random_state, regime_config=regime_cfg, include_macro_interactions=True)
         save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
         save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
     

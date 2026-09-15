@@ -148,6 +148,7 @@ def scale_chars_cross_sectionally_by_month(
 def build_feature_panel(
     df: pd.DataFrame,
     sic2_column: str,
+    random_state: int,
     regime_config,
     include_macro_interactions=True
 ):
@@ -171,7 +172,7 @@ def build_feature_panel(
         char_cols=all_char_cols,
         date_col="date",
         n_quantiles=1000,
-        random_state=42,
+        random_state=random_state,
     )
 
     if regime_config.mode == "coding":

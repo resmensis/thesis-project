@@ -131,10 +131,7 @@ def load_crsp_monthly(
     for col in ["permno", "ret", "dlret"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    logger.debug("Creating ret_total")
-    df["dlret"] = df["dlret"].fillna(0.0)
-    df["ret"] = df["ret"].fillna(0.0)
-    df["ret_total"] = (1.0 + df["ret"]) * (1.0 + df["dlret"]) - 1.0
+
     logger.debug(f"CRSP loaded: {len(df)} rows")
     return df
 

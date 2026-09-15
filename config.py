@@ -22,6 +22,7 @@ class CacheConfig:
     save_predictions: bool = True
     save_metrics: bool = True
     cache_dir: str = "cache"
+    descriptives_dir: str = "descriptives"
 
 
 @dataclass

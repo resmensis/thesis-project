@@ -107,6 +107,7 @@ def build_complete_dataset(
     crsp_path: str,
     macro_path: str,
     out_path: str,
+    descriptives_path: str,
     possible_crsp_cols: list[str],
     possible_marco_cols: list[str],
     cols_chara: list[str],
@@ -151,8 +152,8 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     missing_before = compute_missingness_for_characteristics(merged, characteristic_cols)
 
-    before_csv = out_path.replace(".parquet", "_missingness_before.csv")
-    before_jpg = out_path.replace(".parquet", "_missingness_before.jpg")
+    before_csv = f"{descriptives_path}_missingness_before.csv"
+    before_jpg = f"{descriptives_path}_missingness_before.jpg"
 
     missing_before.to_csv(before_csv, index=False)
     save_missingness_lineplot(
@@ -174,8 +175,8 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     missing_after = compute_missingness_for_characteristics(merged, characteristic_cols)
 
-    after_csv = out_path.replace(".parquet", "_missingness_after.csv")
-    after_jpg = out_path.replace(".parquet", "_missingness_after.jpg")
+    after_csv = f"{descriptives_path}_missingness_after.csv"
+    after_jpg = f"{descriptives_path}_missingness_after.jpg"
 
     missing_after.to_csv(after_csv, index=False)
     save_missingness_lineplot(
@@ -189,7 +190,7 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # 4. Comparison plot (before vs after)
     # ------------------------------------------------------------------
-    comparison_jpg = out_path.replace(".parquet", "_missingness_comparison.jpg")
+    comparison_jpg = f"{descriptives_path}_missingness_comparison.jpg"
     save_missingness_comparison_plot(
         missing_before,
         missing_after,
@@ -197,6 +198,23 @@ def build_complete_dataset(
         title="Missing Data Percentage: Before vs After Imputation",
     )
     logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
+
+
+
+    # Build ret_total
+    logger.debug("Creating ret_total")
+
+    has_return_data = (merged["ret"].notna() | merged["dlret"].notna())
+
+    merged["ret_total"] = (
+        (1.0 + merged["ret"].fillna(0.0))
+        * (1.0 + merged["dlret"].fillna(0.0))
+        - 1.0
+    ).where(has_return_data)
+
+
+
+
 
     # Build next-month excess return target after merge/imputation stage.
     logger.debug("Building lead excess return target")
@@ -229,7 +247,7 @@ def build_complete_dataset(
     """
     merged = merged.dropna(subset=["excess_ret_lead"])
     """
-    merged = merged.dropna(subset=["excess_ret_lead"])
+    
     logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)
     return merged
