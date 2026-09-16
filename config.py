@@ -6,17 +6,19 @@ from typing import Dict, List, Optional
 class ReproducibilityConfig:
     random_state: int = 42
     torch_deterministic: bool = True
+    scalar_n_quantiles: int = 1000
 
 @dataclass
 class RunControlConfig:
-    dataset_creation_only: bool = True  # If True, stop after building complete_dataset
-    feature_panel_only: bool = False  # If True, stop after building feature_panel
+    dataset_creation_only: bool = False  # If True, stop after building complete_dataset
+    feature_panel_only: bool = True  # If True, stop after building feature_panel
 
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    force_rebuild_dataset: bool = True  # If True, rebuild complete_dataset even if cached
-    force_refit_models: bool = False  # If True, rebuild feature_panel even if cached
+    force_rebuild_dataset: bool = False  # If True, rebuild complete_dataset even if cached
+    force_rebuild_feature_set: bool = True  # If True, rebuild build_feature_panel even if cached
+    force_refit_models: bool = False  # If True, rerun predictions even if cached
     save_complete_dataset: bool = True
     save_feature_panel: bool = True
     save_predictions: bool = True
@@ -66,6 +68,9 @@ class DataFilesConfig:
         'roic', 'salecash', 'saleinv', 'salerec', 'secured', 'securedind', 'sgr', 'sin', 'sp', 
         'tang', 'tb'
     ])
+    marco_cols: List[str] = field(default_factory=lambda: [
+        "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"
+    ])
 
 
 @dataclass
@@ -76,20 +81,22 @@ class SplitConfig:
 
 @dataclass
 class DataRegimeConfig:
-    mode: str = "full"  # 'full' or 'coding'
-    coding_max_stocks_per_month: int = 500
+    mode: str = "coding"  # 'full' or 'coding'
+    coding_max_stocks: int = 500
+    chara_cols_coding: List[str] = field(default_factory=lambda: [
+        "size", "mom12", "turnover", "dolvol", "ret_1_0", 
+        "prof", "roe", "stdacc", "cash", "saleq_growth", 
+        "bm", "asset_growth", "inv", "op", "ni_at"
+    ])
+    include_macro_interactions: bool = True
     """
     coding_keep_macro_count: int = 2
     coding_keep_industry_count: int = 10
-    coding_include_interactions: bool = True
     coding_max_interactions: int = 12    
     """
     ols3_size_col: str = "size"
     ols3_bm_col: str = "bm"
     ols3_mom_col: str = "mom12"
-    monthly_candidate_cols: List[str] = field(default_factory=lambda: ["size", "mom12", "turnover", "dolvol", "ret_1_0"])
-    quarterly_candidate_cols: List[str] = field(default_factory=lambda: ["prof", "roe", "stdacc", "cash", "saleq_growth"])
-    annual_candidate_cols: List[str] = field(default_factory=lambda: ["bm", "asset_growth", "inv", "op", "ni_at"])
 
 
 @dataclass

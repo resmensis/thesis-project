@@ -144,11 +144,8 @@ def main():
     
     # ------------------------------------------------------------------
     # 2. Build or load feature panel
-    # ------------------------------------------------------------------
-    feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
-    feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
-    
-    if cache_cfg.enabled and not cache_cfg.force_refit_models:
+    # ------------------------------------------------------------------  
+    if cache_cfg.enabled and not cache_cfg.force_rebuild_feature_set:
         cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
         cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
         
@@ -158,14 +155,32 @@ def main():
             feature_cols = cached_cols
         else:
             logger.info("Building feature panel (no cache found).")
-            feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, random_state=random_state, regime_config=regime_cfg, include_macro_interactions=True)
-            save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
-            save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
+            feature_panel, feature_cols = build_feature_panel(
+                complete,
+                out_path_panel=feature_panel_path,
+                out_path_cols=feature_cols_path,
+                cols_chara=data_cfg.chara_cols,
+                cols_macro=data_cfg.marco_cols,
+                sic2_column=data_cfg.sic2_column,
+                n_quantiles=repro_cfg.scalar_n_quantiles,
+                random_state=random_state,
+                regime_config=regime_cfg,
+                save_feature_panel=cache_cfg.save_feature_panel,
+            )
     else:
         logger.info("Building feature panel (cache disabled or force_refit).")
-        feature_panel, feature_cols = build_feature_panel(complete,sic2_column=data_cfg.sic2_column, random_state=random_state, regime_config=regime_cfg, include_macro_interactions=True)
-        save_parquet(feature_panel, feature_panel_path, enabled=cache_cfg.save_feature_panel)
-        save_pickle(feature_cols, feature_cols_path, enabled=cache_cfg.save_feature_panel)
+        feature_panel, feature_cols = build_feature_panel(
+            complete,
+            out_path_panel=feature_panel_path,
+            out_path_cols=feature_cols_path,
+            cols_chara=data_cfg.chara_cols,
+            cols_macro=data_cfg.marco_cols,
+            sic2_column=data_cfg.sic2_column,
+            n_quantiles=repro_cfg.scalar_n_quantiles,
+            random_state=random_state,
+            regime_config=regime_cfg,
+            save_feature_panel=cache_cfg.save_feature_panel,
+        )
     
     logger.info(f"Feature panel shape: {feature_panel.shape}")
     logger.info(f"Number of feature columns: {len(feature_cols)}")

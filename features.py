@@ -44,6 +44,7 @@ def create_macro_interactions(df: pd.DataFrame, char_cols, cols_macro):
     for z in char_cols:
         for m in cols_macro:
             out[f"{z}__x__{m}"] = out[z] * out[m]
+        out = out.copy()
     return out
 
 
@@ -93,6 +94,7 @@ def select_coding_features(df: pd.DataFrame, cols_chara, cols_macro, industry_co
 def scale_chars_cross_sectionally_by_month(
     df: pd.DataFrame,
     characteristic_cols: list[str],
+    date_col: str = "date",
     n_quantiles: int = 1000,
     random_state: int = 42,
 ):
@@ -112,11 +114,9 @@ def scale_chars_cross_sectionally_by_month(
 
     for col in characteristic_cols:
         lam = lambda x: qt.fit_transform(x.values.reshape(-1, 1)).ravel()
-        df[col] = df.groupby("date")[col].transform(lam)
-
-
-
-    return out
+        out[col] = out.groupby(date_col)[col].transform(lam)
+        
+    return out.copy()
 
 
 def scale_chars_cross_sectionally_by_month_bigdata_v2(
@@ -183,74 +183,104 @@ def scale_chars_cross_sectionally_by_month_bigdata_v2(
     return out
 
 
+def sample_permno_coding(
+    df: pd.DataFrame,
+    n_permnos: int = 500,
+    permno_col: str = "permno",
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """
+    Randomly select unique PERMNOs and retain all observations for them.
+    """
+    
+    if permno_col not in df.columns:
+        raise KeyError(f"Column '{permno_col}' is not in the DataFrame.")
+
+    if n_permnos <= 0:
+        raise ValueError(f"n_permnos must be positive; received {n_permnos}.")
+
+    available_permnos = df[permno_col].dropna().unique()
+    n_available = len(available_permnos)
+
+    if n_permnos > n_available:
+        raise ValueError(
+            f"Requested {n_permnos} PERMNOs, but only {n_available} "
+            f"non-missing unique PERMNOs are available."
+        )
+
+    rng = np.random.default_rng(random_state)
+
+    selected_permnos = rng.choice(
+        available_permnos,
+        size=n_permnos,
+        replace=False,
+    )
+
+    return df.loc[df[permno_col].isin(selected_permnos)].copy()
+
+
 def build_feature_panel(
     df: pd.DataFrame,
     out_path_panel: str,
     out_path_cols: str,
-    sic2_column: str,
     cols_chara: list[str],
     cols_macro: list[str],
+    sic2_column: str,
+    n_quantiles: int,
     random_state: int,
     regime_config,
     save_feature_panel: bool,
-    include_macro_interactions=True,
 ):
     logger.info(f"Building feature panel, mode={regime_config.mode}")
 
-    if regime_config.mode not in ("full", "coding"):
-        raise ValueError(
-            f"Invalid value for variable: {regime_config.mode}. "
-            "Expected 'full' or 'coding'."
-        )
 
-    cols_chara = cols_chara
-    cols_macro = cols_chara
-
+    # ------------------------------------------------------------------
+    # 1. Create industry dummies 
+    # ------------------------------------------------------------------
     out = create_industry_dummies(df, sic2_column)
 
     industry_cols = [c for c in out.columns if c.startswith("ind_")]
-    logger.debug(f"Identified {len(cols_chara)} char, {len(cols_macro)} macro, {len(industry_cols)} industry cols")
+    logger.debug(f"Identified {len(cols_chara)} char, {len(cols_macro)} macro, {len(industry_cols)} industry dummies")
 
 
-
-    # Step 2: scale the 94 characteristics cross-sectionally month by month to [-1, 1]
+    # ------------------------------------------------------------------
+    # 2. Scale characteristics cross-sectionally month by month to [-1, 1]
+    # ------------------------------------------------------------------
     out = scale_chars_cross_sectionally_by_month(
         out,
-        char_cols=cols_chara,
+        characteristic_cols=cols_chara,
         date_col="date",
-        n_quantiles=1000,
+        n_quantiles=n_quantiles,        
         random_state=random_state,
     )
 
-    if regime_config.mode == "coding":
-        sel = select_coding_features(
-            out,
-            cols_chara=cols_chara,
-            cols_macro=cols_macro,
-            industry_cols=industry_cols,
-            config=regime_config,
-        )
-        char_cols = sel["char_cols"]
-        cols_macro = sel["cols_macro"]
-        industry_cols = sel["industry_cols"]
-        interaction_cols = []
 
-        if regime_config.coding_include_interactions and len(cols_macro) > 0:
-            out, interaction_cols = create_limited_macro_interactions(
-                out,
-                char_cols=char_cols,
-                cols_macro=cols_macro,
-                max_interactions=regime_config.coding_max_interactions,
-            )
-
-        feature_cols = char_cols + industry_cols + interaction_cols  # Macro removed
-
-    else:
-        if include_macro_interactions:
+    # ------------------------------------------------------------------
+    # 3. Interactions: Chara x Macro
+    # ------------------------------------------------------------------
+    if regime_config.mode == "full":
+        if regime_config.include_macro_interactions:
             out = create_macro_interactions(out, cols_chara, cols_macro)
 
         interaction_cols = [c for c in out.columns if "__x__" in c]
-        feature_cols = cols_chara + industry_cols + interaction_cols  # Macro removed
+        feature_cols = cols_chara + interaction_cols + industry_cols
+
+
+    # ------------------------------------------------------------------
+    # 4. Sample reduction for coding version
+    # ------------------------------------------------------------------
+    else:
+        out = sample_permno_coding(
+            out,
+            n_permnos=regime_config.coding_max_stocks,
+            permno_col="permno",
+            random_state=random_state
+        )
+        
+        char_cols_coding = regime_config.chara_cols_coding
+        feature_cols = char_cols_coding
+
+
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
     save_parquet(out, out_path_panel, enabled=save_feature_panel)
