@@ -272,7 +272,8 @@ def build_complete_dataset(
 
     # Build next-month excess return target after merge/imputation stage.
     logger.debug("Building lead excess return target")
-
+    
+    merged = merged.sort_values(["permno", "date"])
     merged["excess_ret_lead"] = merged.groupby("permno")["ret_total"].shift(-1)
 
 
@@ -292,8 +293,11 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # Summary 
     # ------------------------------------------------------------------
+    cols_summary = characteristic_cols + ["excess_ret_lead"]
+    summary = summarize_columns(merged, cols_summary)
 
-
+    summary_csv = f"{descriptives_path}/summary.csv"
+    summary.to_csv(summary_csv, index=False)
     
     logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)

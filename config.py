@@ -78,10 +78,12 @@ class SplitConfig:
 class DataRegimeConfig:
     mode: str = "full"  # 'full' or 'coding'
     coding_max_stocks_per_month: int = 500
+    """
     coding_keep_macro_count: int = 2
     coding_keep_industry_count: int = 10
     coding_include_interactions: bool = True
-    coding_max_interactions: int = 12
+    coding_max_interactions: int = 12    
+    """
     ols3_size_col: str = "size"
     ols3_bm_col: str = "bm"
     ols3_mom_col: str = "mom12"

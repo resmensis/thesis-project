@@ -83,12 +83,22 @@ def main():
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
     descriptives_path=cache_cfg.descriptives_dir
 
+    feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
+    feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
+
+
     if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
+        cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
+        cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
+
         cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
         
-        if cached_dataset is not None:
+        if cached_panel is not None and cached_cols is not None:
+            logger.info(f"Feature panel and cols found in cashe. Skipping building/loading dataset.")       
+        elif cached_dataset is not None:
             logger.info(f"Loading cached dataset from {complete_dataset_path}")
             complete = cached_dataset
+            logger.info(f"Complete dataset shape: {complete.shape}")
         else:
             logger.info("Building complete dataset (no cache found).")
             complete = build_complete_dataset(
@@ -105,6 +115,7 @@ def main():
                 cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
                 cols_vars_annual=freq_cfg.cols_vars_annual
             )
+            logger.info(f"Complete dataset shape: {complete.shape}")
     else:
         logger.info("Building complete dataset (cache disabled or force_refit).")
         complete = build_complete_dataset(
@@ -121,14 +132,13 @@ def main():
             cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
             cols_vars_annual=freq_cfg.cols_vars_annual
         )
+        logger.info(f"Complete dataset shape: {complete.shape}")
 
-
-    logger.info(f"Complete dataset shape: {complete.shape}")
 
     # Check if we should stop after dataset creation
     if run_ctrl_cfg.dataset_creation_only:
         print("Dataset creation only mode is ON.")
-        print(f"Complete dataset created and cached at: {cache_cfg.cache_dir}/complete_dataset.parquet")
+        print(f"Complete dataset created and cached at: {complete_dataset_path}")
         return
 
     
