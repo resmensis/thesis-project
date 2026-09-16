@@ -9,27 +9,6 @@ from io_utils import save_parquet, save_pickle
 logger = logging.getLogger("eap_ml.features")
 
 
-EXCLUDED_BASE = {
-    "permno", "date", "sic2", "siccd", "industry_code", "industry_code_grp",
-    "ret", "dlret", "ret_total", "rf", "rf_lead", "excess_ret_lead"
-}
-
-
-def infer_characteristic_cols(df: pd.DataFrame):
-    return [c for c in df.columns if c not in EXCLUDED_BASE and not c.startswith("ind_") and "__x__" not in c]
-
-
-def infer_cols_macro(df: pd.DataFrame):
-    candidates = []
-    for c in df.columns:
-        lc = c.lower()
-        if c in EXCLUDED_BASE or c.startswith("ind_") or "__x__" in c:
-            continue
-        if any(k in lc for k in ["dp", "ep", "bm_mkt", "ntis", "tbl", "lty", "tms", "dfy", "svar", "infl", "rf"]):
-            candidates.append(c)
-    return candidates
-
-
 def create_industry_dummies(df: pd.DataFrame, sic2_column: str):
     logger.debug(f"Creating industry dummies.")
     out = df.copy()
@@ -46,49 +25,6 @@ def create_macro_interactions(df: pd.DataFrame, char_cols, cols_macro):
             out[f"{z}__x__{m}"] = out[z] * out[m]
         out = out.copy()
     return out
-
-
-def create_limited_macro_interactions(df, char_cols, cols_macro, max_interactions=12):
-    logger.debug(f"Creating limited macro interactions: {max_interactions}")
-    out = df.copy()
-    pairs = []
-    for c in char_cols:
-        for m in cols_macro:
-            pairs.append((c, m))
-    for c, m in pairs[:max_interactions]:
-        out[f"{c}__x__{m}"] = out[c] * out[m]
-    interaction_cols = [f"{c}__x__{m}" for c, m in pairs[:max_interactions]]
-    return out, interaction_cols
-
-
-def _first_available(df: pd.DataFrame, candidates):
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-
-def select_coding_features(df: pd.DataFrame, cols_chara, cols_macro, industry_cols, config):
-    logger.debug("Selecting coding-mode features")
-    required = set()
-    for col in [config.ols3_size_col, config.ols3_bm_col, config.ols3_mom_col]:
-        if col in df.columns:
-            required.add(col)
-    monthly_pick = _first_available(df, config.monthly_candidate_cols)
-    quarterly_pick = _first_available(df, config.quarterly_candidate_cols)
-    annual_pick = _first_available(df, config.annual_candidate_cols)
-    for col in [monthly_pick, quarterly_pick, annual_pick]:
-        if col is not None:
-            required.add(col)
-    preferred_extra = ["turnover", "dolvol", "beta", "beta_sq", "retvol", "idiovol", "prof", "inv", "op", "asset_growth"]
-    for col in preferred_extra:
-        if col in cols_chara:
-            required.add(col)
-    selected_char_cols = [c for c in cols_chara if c in required]
-    selected_cols_macro = cols_macro[:config.coding_keep_macro_count]
-    selected_industry_cols = industry_cols[:config.coding_keep_industry_count]
-    logger.debug(f"Selected {len(selected_char_cols)} char, {len(selected_cols_macro)} macro, {len(selected_industry_cols)} industry cols")
-    return {"char_cols": selected_char_cols, "cols_macro": selected_cols_macro, "industry_cols": selected_industry_cols}
 
 
 def scale_chars_cross_sectionally_by_month(
