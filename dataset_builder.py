@@ -32,26 +32,6 @@ def compute_missingness_for_characteristics(
     return out
 
 
-def save_missingness_lineplot(
-    missing_df: pd.DataFrame,
-    out_jpg_path: str,
-    title: str,
-    color: str = "blue",
-):
-    """
-    Save a line plot with dots showing missing data percentage per characteristic.
-    """
-    plt.figure(figsize=(14, 6))
-    plt.plot(range(len(missing_df)), missing_df["missing_pct"], marker="o", linestyle="-", color=color, markersize=4)
-    plt.xlabel("Characteristic Index (sorted by missingness)")
-    plt.ylabel("Missing data percentage")
-    plt.title(title)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(out_jpg_path, dpi=200, bbox_inches="tight")
-    plt.close()
-
-
 def save_missingness_comparison_plot(
     missing_before: pd.DataFrame,
     missing_after: pd.DataFrame,
