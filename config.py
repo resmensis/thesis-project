@@ -10,13 +10,13 @@ class ReproducibilityConfig:
 
 @dataclass
 class RunControlConfig:
-    dataset_creation_only: bool = False  # If True, stop after building complete_dataset
+    dataset_creation_only: bool = True  # If True, stop after building complete_dataset
     feature_panel_only: bool = True  # If True, stop after building feature_panel
 
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    force_rebuild_dataset: bool = False  # If True, rebuild complete_dataset even if cached
+    force_rebuild_dataset: bool = True  # If True, rebuild complete_dataset even if cached
     force_rebuild_feature_set: bool = True  # If True, rebuild build_feature_panel even if cached
     force_refit_models: bool = False  # If True, rerun predictions even if cached
     save_complete_dataset: bool = True

@@ -9,9 +9,6 @@ from typing import Any
 logger = logging.getLogger("eap_ml.data_inputs")
 
 
-import pandas as pd
-
-
 def standardize_to_monthly(
     df: pd.DataFrame,
     date_col: str = "date",
