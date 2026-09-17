@@ -7,7 +7,7 @@ from pandas.api.types import is_numeric_dtype
 import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
-from io_utils import maybe_load_parquet, save_parquet
+from io_utils import save_parquet
 
 logger = logging.getLogger("eap_ml.dataset_builder")
 
@@ -268,9 +268,7 @@ def build_complete_dataset(
 
 
     logger.debug("Loading source datasets")
-    """
-    ds = load_datashare(datashare_path)
-    """
+
     crsp = load_crsp_monthly(crsp_path, possible_crsp_cols)
     macro = load_macro_monthly(macro_path, possible_marco_cols)
     ds = load_datashare(datashare_path)
