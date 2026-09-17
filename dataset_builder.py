@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
@@ -127,12 +128,12 @@ def summarize_columns(
         first_valid_index = s.first_valid_index()
         first_value = s.loc[first_valid_index] if first_valid_index is not None else None
         first_value_type = type(first_value).__name__ if first_value is not None else None
-        first_year_month = df.loc[first_valid_index, "date"] if first_valid_index is not None else None
+        first_year_month = df.at[first_valid_index, "date"] if first_valid_index is not None else None
 
         last_valid_index = s.last_valid_index()
-        last_year_month = df.loc[last_valid_index, "date"] if last_valid_index is not None else None
+        last_year_month = df.at[last_valid_index, "date"] if last_valid_index is not None else None
 
-        if np.issubdtype(dtype, np.number):
+        if is_numeric_dtype(s):
             col_min = s.min(skipna=True)
             col_max = s.max(skipna=True)
             col_range = col_max - col_min
