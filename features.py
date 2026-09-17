@@ -52,7 +52,7 @@ def scale_chars_cross_sectionally_by_month(
         lam = lambda x: qt.fit_transform(x.values.reshape(-1, 1)).ravel()
         out[col] = out.groupby(date_col)[col].transform(lam)
         
-    return out.copy()
+    return out
 
 
 def scale_chars_cross_sectionally_by_month_bigdata_v2(

@@ -10,7 +10,7 @@ logger = logging.getLogger("eap_ml.models_lstm")
 
 
 class PanelSequenceDataset(Dataset):
-    def __init__(self, df, feature_cols, target_col="excess_ret_lead", seq_len=12):
+    def __init__(self, df, feature_cols, target_col="ret_total", seq_len=12):
         self.samples = []
         for permno, g in df.sort_values(["permno", "date"]).groupby("permno"):
             g = g.reset_index(drop=True)

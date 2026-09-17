@@ -104,9 +104,9 @@ def train_models_for_year(
     logger.info(f"Year {year}: Training models on {len(train_df)} samples")
     
     X_train = train_df[feature_cols].fillna(0.0)
-    y_train = train_df["excess_ret_lead"]
+    y_train = train_df["ret_total"]
     X_val = val_df[feature_cols].fillna(0.0)
-    y_val = val_df["excess_ret_lead"]
+    y_val = val_df["ret_total"]
     
     # Copy for scaling if needed
     X_train_s = X_train.copy()
@@ -191,7 +191,7 @@ def generate_predictions(
     logger.info(f"Year {year}: Generating predictions for {len(test_df)} samples")
     
     X_test = test_df[feature_cols].fillna(0.0)
-    y_test = test_df["excess_ret_lead"]
+    y_test = test_df["ret_total"]
     
     predictions = []
     
@@ -199,7 +199,7 @@ def generate_predictions(
         pred = model.predict(X_test).ravel()
         
         # Create DataFrame with predictions
-        pred_df = test_df[["permno", "date", "excess_ret_lead"]].copy()
+        pred_df = test_df[["permno", "date", "ret_total"]].copy()
         pred_df["model"] = model_name
         pred_df["prediction"] = pred
         pred_df["year"] = year

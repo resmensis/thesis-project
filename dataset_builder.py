@@ -270,11 +270,11 @@ def build_complete_dataset(
     # Temporal shifts 
     # ------------------------------------------------------------------
 
-    # Build next-month excess return target after merge/imputation stage.
-    logger.debug("Building lead excess return target")
+    # Build next-month excess return target.
+    logger.debug("Building lead return target (shift ret_total)")
     
     merged = merged.sort_values(["permno", "date"])
-    merged["excess_ret_lead"] = merged.groupby("permno")["ret_total"].shift(-1)
+    merged["ret_total"] = merged.groupby("permno")["ret_total"].shift(-1)
 
 
     # Build shifts for monthly, quarterly and annual characteristcs
@@ -293,11 +293,32 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # Summary 
     # ------------------------------------------------------------------
-    cols_summary = characteristic_cols + ["excess_ret_lead"]
-    summary = summarize_columns(merged, cols_summary)
+    summary_before = summarize_columns(merged, cols_chara_and_ret_total)
 
-    summary_csv = f"{descriptives_path}/summary.csv"
-    summary.to_csv(summary_csv, index=False)
+    summary_before_csv = f"{descriptives_path}/summary_before.csv"
+    summary_before.to_csv(summary_before_csv, index=False)
+
+    # Define inclusive monthly boundaries
+    start_period = pd.Period("1957-10", freq="M")
+    end_period = pd.Period("2021-06", freq="M")
+
+    # Keep observations from October 1957 through June 2021
+
+    mask = (
+        (merged["date"] >= start_period)
+        & (merged["date"] <= end_period)
+    )
+    merged = merged.loc[mask].copy()
+
+    logger.debug(f"Dataset reduced due to missing values to : {merged["date"].min()} and {merged["date"].max()}")
+
+    # Visualisation of missingness after temporal cuts
+    missing_after_cut = compute_missingness_for_characteristics(merged, cols_chara_and_ret_total)
+
+    after_cut_csv = f"{descriptives_path}/charas_missingness_after.csv"
+    missing_after_cut.to_csv(after_csv, index=False)
+
+
     
     logger.info(f"Complete dataset built: {merged.shape}")
     save_parquet(merged, out_path, enabled=cache_enabled)
