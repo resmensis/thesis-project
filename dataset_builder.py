@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
+from transformers import GroupedMedianImputer
 
 logger = logging.getLogger("eap_ml.dataset_builder")
 
@@ -323,7 +324,18 @@ def build_complete_dataset(
 
     # Imputation
     logger.info("Imputing missing characteristics using monthly cross-sectional medians")
+
+    imputer = GroupedMedianImputer(
+        group_cols=["date"],
+        value_cols=cols_chara_and_ret_total,
+        fallback="leave_missing",
+    )
+
+    merged = imputer.fit_transform(merged)
+
+    """
     merged = impute_characteristics_by_month_cross_sectional_median(merged, cols_chara_and_ret_total)
+    """
 
     #-------------
     test_5 = merged.loc[merged["date"] == date_1987_05].copy()
