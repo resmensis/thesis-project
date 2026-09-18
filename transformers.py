@@ -192,7 +192,7 @@ class GroupedMedianImputer(BaseEstimator, TransformerMixin):
 
 
 
-class GroupedLagShiftTransformer(BaseEstimator, TransformerMixin):
+class GroupedLagShiftTransformer111111111111111(BaseEstimator, TransformerMixin):
     def _init_(self, lag=1, group_col="group_id", value_cols=None):
         self.lag = lag
         self.group_col = group_col
@@ -207,3 +207,228 @@ class GroupedLagShiftTransformer(BaseEstimator, TransformerMixin):
         shifted = X.groupby(self.group_col)[self.value_cols_].shift(self.lag)
         shifted.columns = [f"{c}_lag{self.lag}" for c in shifted.columns]
         return pd.concat([X.drop(columns=self.value_cols_), shifted], axis=1)
+
+
+    from __future__ import annotations
+
+from numbers import Integral
+from typing import Sequence
+
+import numpy as np
+import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.utils.validation import check_is_fitted
+
+
+class GroupedLagShiftTransformer(BaseEstimator, TransformerMixin):
+    """
+    Apply a grouped pandas shift to selected columns.
+
+    Parameters
+    ----------
+    lag : int, default=1
+        Number of rows by which to shift within each group.
+
+        Positive values create backward lags:
+            groupby(...).shift(1)
+
+        Negative values create forward shifts:
+            groupby(...).shift(-1)
+
+    group_col : str, default="group_id"
+        Column used to define groups.
+
+    value_cols : sequence of str or None, default=None
+        Columns to shift. If None, all columns except group_col are shifted.
+
+    create_new_cols : bool, default=True
+        If True, preserve the original value columns and append shifted columns.
+        If False, replace the original value columns with shifted values.
+
+    suffix : str or None, default=None
+        Suffix used for newly created columns. If None, a suffix is generated
+        from lag, for example "_lag1" or "_shift_forward1".
+    """
+
+    def __init__(
+        self,
+        lag: int = 1,
+        group_col: str = "group_id",
+        value_cols: Sequence[str] | None = None,
+        create_new_cols: bool = True,
+        suffix: str | None = None,
+    ):
+        self.lag = lag
+        self.group_col = group_col
+        self.value_cols = value_cols
+        self.create_new_cols = create_new_cols
+        self.suffix = suffix
+
+    def fit(self, X: pd.DataFrame, y=None):
+        """Validate the input and learn the columns used during transformation."""
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError("X must be a pandas DataFrame.")
+
+        if not isinstance(self.lag, Integral):
+            raise TypeError("lag must be an integer.")
+
+        if not isinstance(self.group_col, str):
+            raise TypeError("group_col must be a string.")
+
+        if not isinstance(self.create_new_cols, bool):
+            raise TypeError("create_new_cols must be a boolean.")
+
+        if self.suffix is not None and not isinstance(self.suffix, str):
+            raise TypeError("suffix must be a string or None.")
+
+        if self.group_col not in X.columns:
+            raise ValueError(
+                f"group_col={self.group_col!r} is not present in X."
+            )
+
+        if self.value_cols is None:
+            value_cols = [
+                column for column in X.columns
+                if column != self.group_col
+            ]
+        else:
+            value_cols = list(self.value_cols)
+
+            missing_cols = [
+                column for column in value_cols
+                if column not in X.columns
+            ]
+
+            if missing_cols:
+                raise ValueError(
+                    f"The following value_cols are missing from X: "
+                    f"{missing_cols}"
+                )
+
+            if self.group_col in value_cols:
+                raise ValueError(
+                    "group_col must not be included in value_cols."
+                )
+
+        if not value_cols:
+            raise ValueError("At least one value column is required.")
+
+        self.value_cols_ = value_cols
+        self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+
+        if self.suffix is None:
+            if self.lag >= 0:
+                suffix = f"_lag{self.lag}"
+            else:
+                suffix = f"_shift_forward{abs(self.lag)}"
+        else:
+            suffix = self.suffix
+
+        self.suffix_ = suffix
+
+        self.shifted_cols_ = [
+            f"{column}{self.suffix_}"
+            for column in self.value_cols_
+        ]
+
+        if len(set(self.shifted_cols_)) != len(self.shifted_cols_):
+            raise ValueError("Generated shifted column names are not unique.")
+
+        if self.create_new_cols:
+            collisions = [
+                column for column in self.shifted_cols_
+                if column in X.columns
+            ]
+
+            if collisions:
+                raise ValueError(
+                    "Generated shifted columns already exist in X: "
+                    f"{collisions}"
+                )
+
+            self.feature_names_out_ = np.asarray(
+                list(X.columns) + self.shifted_cols_,
+                dtype=object,
+            )
+        else:
+            self.feature_names_out_ = np.asarray(
+                [
+                    self.group_col if column == self.group_col
+                    else (
+                        column
+                        if column not in self.value_cols_
+                        else f"{column}{self.suffix_}"
+                    )
+                    for column in X.columns
+                ],
+                dtype=object,
+            )
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Shift value columns independently within each group."""
+        check_is_fitted(
+            self,
+            attributes=[
+                "value_cols_",
+                "shifted_cols_",
+                "feature_names_out_",
+            ],
+        )
+
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError("X must be a pandas DataFrame.")
+
+        missing_cols = [
+            column for column in self.feature_names_in_
+            if column not in X.columns
+        ]
+
+        if missing_cols:
+            raise ValueError(
+                f"X is missing columns seen during fit: {missing_cols}"
+            )
+
+        shifted = (
+            X.groupby(
+                self.group_col,
+                sort=False,
+                dropna=False,
+            )[self.value_cols_]
+            .shift(self.lag)
+        )
+
+        if self.create_new_cols:
+            shifted = shifted.copy()
+            shifted.columns = self.shifted_cols_
+
+            return pd.concat(
+                [X.copy(), shifted],
+                axis=1,
+            )
+
+        X_out = X.copy()
+        X_out.loc[:, self.value_cols_] = shifted.to_numpy()
+
+        return X_out
+
+    def get_feature_names_out(
+        self,
+        input_features=None,
+    ) -> np.ndarray:
+        """Return output column names for sklearn compatibility."""
+        check_is_fitted(self, attributes=["feature_names_out_"])
+
+        if input_features is not None:
+            input_features = np.asarray(input_features, dtype=object)
+
+            if not np.array_equal(
+                input_features,
+                self.feature_names_in_,
+            ):
+                raise ValueError(
+                    "input_features do not match the columns seen during fit."
+                )
+
+        return self.feature_names_out_.copy()
