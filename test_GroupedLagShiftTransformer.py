@@ -23,14 +23,33 @@ X = pd.DataFrame(
 
 X = X.sort_values(["group_id", "date"]).reset_index(drop=True)
 
-transformer = GroupedLagShiftTransformer(
-    lag=1,
+transformer_1 = GroupedLagShiftTransformer(
+    lag=-1,
     group_col="group_id",
-    value_cols=["return", "size"],
+    value_cols=["return"],
     create_new_cols=True,
+    rename_mode="original",
+    suffix=None,
+    original_suffix="_original",
 )
 
-X_lagged = transformer.fit_transform(X)
+X_lagged = transformer_1.fit_transform(X)
 
 print(X)
+print(X_lagged)
+
+
+transformer_2 = GroupedLagShiftTransformer(
+    lag=-2,
+    group_col="group_id",
+    value_cols=["size"],
+    create_new_cols=True,
+    rename_mode="original",
+    suffix=None,
+    original_suffix="_original",
+)
+
+X_lagged = transformer_2.fit_transform(X_lagged)
+
+
 print(X_lagged)

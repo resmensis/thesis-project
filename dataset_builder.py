@@ -8,7 +8,13 @@ import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
-from transformers import GroupedMedianImputer
+from transformers import GroupedMedianImputer, GroupedLagShiftTransformer
+
+
+
+from pathlib import Path
+from typing import Optional
+import warnings
 
 logger = logging.getLogger("eap_ml.dataset_builder")
 
@@ -231,6 +237,189 @@ def save_missingness_three_comparison_plot(
     plt.close()
 
 
+def summary_stats_extended(
+    df: pd.DataFrame,
+    date_col: str,
+    output_path: Optional[str] = None,
+    output_name: Optional[str] = None,
+    sort_df: bool = True
+) -> pd.DataFrame:
+    """
+    Generate extended summary statistics for all columns in a DataFrame.
+    
+    For each column, computes:
+    - dtype, min, max, range (where applicable), nunique, sum
+    - missing_count, missing_pct
+    - first_obs_date, last_obs_date (date of first/last non-null value)
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame
+    date_col : str
+        Name of the date column to sort by. Must be present in df and convertible
+        to datetime.
+    output_path : Optional[str], default None
+        Directory path to save output CSV. If None, uses current working directory.
+        Directory will be created if it doesn't exist.
+    output_name : Optional[str], default None
+        Filename (without extension) for output CSV. If None, no file is saved.
+    sort_df : bool, default True
+        If True, sort DataFrame by date_col internally before computing stats.
+        Does not modify the original df (works on a copy).
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with summary statistics.
+        - Rows: original df column names (variables), with 'variable' column
+        - Columns: variable, dtype, min, max, range, nunique, sum, missing_count, 
+                   missing_pct, first_obs_date, last_obs_date
+    
+    Raises
+    ------
+    ValueError
+        If date_col is not in df or cannot be converted to datetime.
+    
+    Warnings
+    --------
+    UserWarning
+        If any column has 100% missing values.
+    
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'date': pd.date_range('2020-01', periods=24, freq='ME'),
+    ...     'ret': np.random.randn(24),
+    ...     'me': np.random.lognormal(10, 1, 24)
+    ... })
+    >>> df.loc[0:2, 'ret'] = np.nan  # Leading NaNs
+    >>> 
+    >>> stats = summary_stats_extended(
+    ...     df=df,
+    ...     date_col='date',
+    ...     output_path='./output',
+    ...     output_name='data_quality_check',
+    ...     sort_df=True
+    ... )
+    >>> print(stats.columns.tolist())
+    ['variable', 'dtype', 'min', 'max', 'range', 'nunique', 'sum', 
+     'missing_count', 'missing_pct', 'first_obs_date', 'last_obs_date']
+    >>> print(stats.loc[stats['variable'] == 'ret', 'first_obs_date'].iloc[0])
+    2020-04-30 00:00:00
+    """
+    
+    # Validate date_col
+    if date_col not in df.columns:
+        raise ValueError(
+            f"Column '{date_col}' not found in DataFrame. "
+            f"Available columns: {list(df.columns)}"
+        )
+    
+    # Create working copy to avoid modifying original df
+    df_work = df.copy()
+    
+    # Ensure date_col is datetime
+    if not pd.api.types.is_datetime64_any_dtype(df_work[date_col]):
+        try:
+            df_work[date_col] = pd.to_datetime(df_work[date_col])
+        except Exception as e:
+            raise ValueError(
+                f"Cannot convert '{date_col}' to datetime: {e}"
+            )
+    
+    # Sort by date if requested
+    if sort_df:
+        df_work = df_work.sort_values(by=date_col).reset_index(drop=True)
+    
+    # Initialize list to collect row dicts
+    stats_rows = []
+    
+    # Iterate over all columns
+    for col in df_work.columns:
+        col_data = df_work[col]
+        col_dtype = col_data.dtype
+        
+        # Basic stats
+        dtype_val = str(col_dtype)
+        nunique_val = col_data.nunique()
+        missing_count = int(col_data.isna().sum())
+        missing_pct = (missing_count / len(df_work)) * 100
+        
+        # Min, max, range (only for numeric/datetime)
+        if pd.api.types.is_numeric_dtype(col_dtype) or pd.api.types.is_datetime64_any_dtype(col_dtype):
+            min_val = col_data.min()
+            max_val = col_data.max()
+            
+            # Range: only for numeric (not meaningful for datetime)
+            if pd.api.types.is_numeric_dtype(col_dtype):
+                if pd.notna(min_val) and pd.notna(max_val):
+                    range_val = max_val - min_val
+                else:
+                    range_val = None
+            else:
+                range_val = None  # datetime columns: range not applicable
+            
+            # Sum: only for numeric
+            if pd.api.types.is_numeric_dtype(col_dtype):
+                sum_val = col_data.sum()
+            else:
+                sum_val = None
+        else:
+            # Object/categorical columns
+            min_val = None
+            max_val = None
+            range_val = None
+            sum_val = None
+        
+        # First/last observation date (first/last non-null value's date)
+        non_null_mask = col_data.notna()
+        if non_null_mask.any():
+            first_obs_idx = non_null_mask.idxmax()  # First True index
+            last_obs_idx = non_null_mask[::-1].idxmax()  # Last True index
+            first_obs_date = df_work.loc[first_obs_idx, date_col]
+            last_obs_date = df_work.loc[last_obs_idx, date_col]
+        else:
+            # All values are NaN
+            first_obs_date = None
+            last_obs_date = None
+            warnings.warn(f"Column '{col}' has 100% missing values")
+        
+        # Collect row dict
+        stats_rows.append({
+            'variable': col,
+            'dtype': dtype_val,
+            'min': min_val,
+            'max': max_val,
+            'range': range_val,
+            'nunique': nunique_val,
+            'sum': sum_val,
+            'missing_count': missing_count,
+            'missing_pct': missing_pct,
+            'first_obs_date': first_obs_date,
+            'last_obs_date': last_obs_date
+        })
+    
+    # Convert to DataFrame (rows = variables, columns = stats)
+    stats_df = pd.DataFrame(stats_rows)
+    
+    # Save to CSV if output_name provided
+    if output_name is not None:
+        # Determine output path
+        if output_path is None:
+            output_dir = Path.cwd()
+        else:
+            output_dir = Path(output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_file = output_dir / f"{output_name}.csv"
+        stats_df.to_csv(output_file, index=False)
+        print(f"Summary statistics saved to: {output_file}")
+    
+    return stats_df
+
+
 def build_complete_dataset(
     datashare_path: str,
     crsp_path: str,
@@ -303,7 +492,12 @@ def build_complete_dataset(
     #-------------
     test_4 = merged.loc[merged["date"] == date_1987_05].copy()
     #-------------
-
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_1",
+    )
     # ------------------------------------------------------------------
     # Missingness visualisation and imputation
     # ------------------------------------------------------------------
@@ -332,6 +526,7 @@ def build_complete_dataset(
     )
 
     merged = imputer.fit_transform(merged)
+    merged = pd.DataFrame(merged)
 
     """
     merged = impute_characteristics_by_month_cross_sectional_median(merged, cols_chara_and_ret_total)
@@ -360,7 +555,12 @@ def build_complete_dataset(
     )
     logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
 
-
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_2",
+    )
     # ------------------------------------------------------------------
     # Temporal shifts 
     # ------------------------------------------------------------------
@@ -369,7 +569,52 @@ def build_complete_dataset(
     #-------------
     test_6 = merged.loc[merged["date"] == date_1987_05].copy()
     #-------------
+    merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
+    shift_1month = ["ret_total", *cols_vars_monthly]
 
+
+    transformer_1month = GroupedLagShiftTransformer(
+        lag=-1,
+        group_col="permno",
+        value_cols=shift_1month,
+        create_new_cols=True,
+        rename_mode="lagged",
+        suffix=None,
+        original_suffix="_original",
+    )
+    transformer_3months = GroupedLagShiftTransformer(
+        lag=-3,
+        group_col="permno",
+        value_cols=cols_vars_quarterly,
+        create_new_cols=True,
+        rename_mode="lagged",
+        suffix=None,
+        original_suffix="_original",
+    )
+    transformer_6months = GroupedLagShiftTransformer(
+        lag=-6,
+        group_col="permno",
+        value_cols=cols_vars_annual,
+        create_new_cols=True,
+        rename_mode="lagged",
+        suffix=None,
+        original_suffix="_original",
+    )
+
+    merged = transformer_1month.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+    merged = transformer_3months.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+    merged = transformer_6months.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_3",
+    )
+    """
     # Build next-month excess return target.
     logger.debug("Building lead return target (shift ret_total)")
     
@@ -389,7 +634,7 @@ def build_complete_dataset(
             merged[i] = grouped[i].shift(-3)
         elif i in cols_vars_annual:
             merged[i] = grouped[i].shift(-6)
-
+    """
 
     #-------------
     test_7 = merged.loc[merged["date"] == date_1987_05].copy()
