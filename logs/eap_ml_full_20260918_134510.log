@@ -8,3 +8,24 @@
 2026-09-18 13:45:10 | INFO | eap_ml.dataset_builder | Building complete dataset, output: cache/complete_dataset.parquet
 2026-09-18 13:45:10 | DEBUG | eap_ml.dataset_builder | Loading source datasets
 2026-09-18 13:45:10 | DEBUG | eap_ml.data_inputs | Loading CRSP monthly data from C:/Coding/Project/data/crsp_monthly.csv
+2026-09-18 13:45:18 | DEBUG | eap_ml.data_inputs | Standardizing date of CRSP
+2026-09-18 13:45:29 | DEBUG | eap_ml.data_inputs | CRSP loaded: 4594389 rows
+2026-09-18 13:45:29 | DEBUG | eap_ml.data_inputs | Loading macro data from C:/Coding/Project/data/Data2024_monthly_goyal.csv
+2026-09-18 13:45:30 | DEBUG | eap_ml.data_inputs | Standardizing date of Macro
+2026-09-18 13:45:30 | DEBUG | eap_ml.data_inputs | Macro loaded: 1848 rows, columns: ['date', 'tbl', 'd/p', 'e/p', 'b/m', 'tms', 'dfy', 'ntis', 'svar']
+2026-09-18 13:45:30 | DEBUG | eap_ml.data_inputs | Loading datashare from C:/Coding/Project/data/datashare.csv
+2026-09-18 13:48:08 | DEBUG | eap_ml.data_inputs | Standardizing date of datashare
+2026-09-18 13:48:17 | DEBUG | eap_ml.data_inputs | Datashare loaded: 4117300 rows, 97 columns
+2026-09-18 13:48:17 | DEBUG | eap_ml.dataset_builder | Identified 94 characteristic columns
+2026-09-18 13:48:17 | DEBUG | eap_ml.dataset_builder | Merging datashare with CRSP
+2026-09-18 13:48:37 | DEBUG | eap_ml.dataset_builder | Merging with macro data
+2026-09-18 13:50:11 | DEBUG | eap_ml.dataset_builder | Creating ret_total
+2026-09-18 13:50:26 | DEBUG | eap_ml.dataset_builder | Saved missingness before imputation: descriptives/charas_missingness_before.csv
+2026-09-18 13:50:26 | INFO | eap_ml.dataset_builder | Imputing missing characteristics using monthly cross-sectional medians
+2026-09-18 13:52:03 | DEBUG | eap_ml.dataset_builder | Saved missingness after imputation: descriptives/charas_missingness_after.csv
+2026-09-18 13:52:05 | DEBUG | eap_ml.dataset_builder | Saved missingness comparison plot: descriptives/charas_missingness_comparison.jpg
+2026-09-18 13:52:11 | DEBUG | eap_ml.dataset_builder | Building lead return target (shift ret_total)
+2026-09-18 13:52:11 | DEBUG | eap_ml.dataset_builder | Building characteristic shifts and ret_total shift
+2026-09-18 13:54:42 | DEBUG | eap_ml.dataset_builder | Dataset reduced due to missing values to : 1957-10 and 2021-06
+2026-09-18 13:54:54 | DEBUG | eap_ml.dataset_builder | Saved missingness after temporal cut: descriptives/charas_missingness_after_cut.csv
+2026-09-18 13:54:55 | DEBUG | eap_ml.dataset_builder | Saved missingness comparison plot: descriptives/charas_missingness_comparison.jpg
