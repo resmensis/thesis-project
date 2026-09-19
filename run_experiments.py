@@ -113,7 +113,8 @@ def main():
                 cols_chara=data_cfg.chara_cols,
                 cols_vars_monthly=freq_cfg.cols_vars_monthly,
                 cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-                cols_vars_annual=freq_cfg.cols_vars_annual
+                cols_vars_annual=freq_cfg.cols_vars_annual,
+                random_state=random_state
             )
             logger.info(f"Complete dataset shape: {complete.shape}")
     else:
@@ -130,7 +131,8 @@ def main():
             cols_chara=data_cfg.chara_cols,
             cols_vars_monthly=freq_cfg.cols_vars_monthly,
             cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-            cols_vars_annual=freq_cfg.cols_vars_annual
+            cols_vars_annual=freq_cfg.cols_vars_annual,
+            random_state=random_state
         )
         logger.info(f"Complete dataset shape: {complete.shape}")
 

@@ -48,7 +48,8 @@ class DataFilesConfig:
     ])
     possible_marco_cols: List[str] = field(default_factory=lambda: [
         "date", "yyyymm", 
-        "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"
+        "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar",
+        "rfree", "rf"
     ])
     chara_cols: List[str] = field(default_factory=lambda: [
         'baspread', 'beta', 'betasq', 'chmom', 'dolvol', 

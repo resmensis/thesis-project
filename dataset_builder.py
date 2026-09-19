@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
-from transformers import GroupedMedianImputer, GroupedLagShiftTransformer
+from transformers import GroupedMedianImputer, GroupedQuantileTransformer, GroupedLagShiftTransformer
 
 
 
@@ -94,53 +94,6 @@ def impute_characteristics_by_month_cross_sectional_median(
 
     return out
 
-
-def summarize_columns(
-    df: pd.DataFrame,
-    characteristic_cols: list[str],
-):
-    """
-    data_cfg: object with attribute 'chara_cols' (list-like)
-    complete: pandas DataFrame sorted by 'date' upstream or this function will sort it
-    Returns: pandas DataFrame with summary per column
-    """
-    summary = []
-    cols_chara = characteristic_cols
-    df = df.sort_values("date")
-
-    for col in cols_chara:
-        s = df[col]
-        dtype = s.dtype
-
-        first_valid_index = s.first_valid_index()
-        first_value = s.loc[first_valid_index] if first_valid_index is not None else None
-        first_value_type = type(first_value).__name__ if first_value is not None else None
-        first_year_month = df.at[first_valid_index, "date"] if first_valid_index is not None else None
-
-        last_valid_index = s.last_valid_index()
-        last_year_month = df.at[last_valid_index, "date"] if last_valid_index is not None else None
-
-        if is_numeric_dtype(s):
-            col_min = s.min(skipna=True)
-            col_max = s.max(skipna=True)
-            col_range = col_max - col_min
-        else:
-            col_min = col_max = col_range = None
-
-        summary.append({
-            "column": col,
-            "dtype": str(dtype),
-            "first_value": first_value,
-            "first_value_type": first_value_type,
-            "first_year_month": first_year_month,
-            "last_year_month": last_year_month,
-            "min": col_min,
-            "max": col_max,
-            "range": col_range,
-        })
-
-    summary_df = pd.DataFrame(summary)
-    return summary_df
 
 
 def save_missingness_three_comparison_plot(
@@ -432,6 +385,7 @@ def build_complete_dataset(
     cols_vars_monthly: list[str],
     cols_vars_quarterly: list[str],
     cols_vars_annual: list [str],
+    random_state: int,
     cache_enabled: bool    
 ):
     logger.info(f"Building complete dataset, output: {out_path}")
@@ -444,7 +398,7 @@ def build_complete_dataset(
     ds = load_datashare(datashare_path)
 
     #-------------
-    date_1987_05 = pd.Period("1987-05", freq="M")
+    date_1987_05 = pd.Period("1987-05-01", freq="M")
     #-------------
     #-------------
     test_1 = ds.loc[ds["date"] == date_1987_05].copy()
@@ -522,7 +476,8 @@ def build_complete_dataset(
     imputer = GroupedMedianImputer(
         group_cols=["date"],
         value_cols=cols_chara_and_ret_total,
-        fallback="leave_missing",
+        fallback="constant",
+        fill_value=0.0
     )
 
     merged = imputer.fit_transform(merged)
@@ -562,10 +517,29 @@ def build_complete_dataset(
         output_name="summary_2",
     )
     # ------------------------------------------------------------------
-    # Temporal shifts 
+    # Quantile Transformation 
     # ------------------------------------------------------------------
 
+    scalar = GroupedQuantileTransformer(
+        group_col="date",
+        value_cols=cols_chara,
+        output_range=(-1, 1),
+        random_state=random_state,
+    )
 
+    merged = scalar.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_3",
+    )
+
+    # ------------------------------------------------------------------
+    # Temporal shifts 
+    # ------------------------------------------------------------------
     #-------------
     test_6 = merged.loc[merged["date"] == date_1987_05].copy()
     #-------------
@@ -602,9 +576,7 @@ def build_complete_dataset(
     )
 
     merged = transformer_1month.fit_transform(merged)
-    merged = pd.DataFrame(merged)
     merged = transformer_3months.fit_transform(merged)
-    merged = pd.DataFrame(merged)
     merged = transformer_6months.fit_transform(merged)
     merged = pd.DataFrame(merged)
 
@@ -612,45 +584,19 @@ def build_complete_dataset(
         merged,
         date_col="date",
         output_path=descriptives_path,
-        output_name="summary_3",
+        output_name="summary_4",
     )
-    """
-    # Build next-month excess return target.
-    logger.debug("Building lead return target (shift ret_total)")
-    
-    merged = merged.sort_values(["permno", "date"])
-    merged["ret_total"] = merged.groupby("permno")["ret_total"].shift(-1)
-
-
-    # Build shifts for monthly, quarterly and annual characteristcs
-    logger.debug("Building characteristic shifts")
-    merged = merged.sort_values(["permno", "date"])
-    grouped = merged.groupby("permno")
-
-    for i in merged.columns:
-        if i in cols_vars_monthly:
-            merged[i] = grouped[i].shift(-1)
-        elif i in cols_vars_quarterly:
-            merged[i] = grouped[i].shift(-3)
-        elif i in cols_vars_annual:
-            merged[i] = grouped[i].shift(-6)
-    """
 
     #-------------
     test_7 = merged.loc[merged["date"] == date_1987_05].copy()
     #-------------
 
-    # ------------------------------------------------------------------
-    # Summary 
-    # ------------------------------------------------------------------
-    summary_before = summarize_columns(merged, cols_chara_and_ret_total)
 
-    summary_before_csv = f"{descriptives_path}/summary_before.csv"
-    summary_before.to_csv(summary_before_csv, index=False)
+
 
     # Define inclusive monthly boundaries
-    start_period = pd.Period("1957-10", freq="M")
-    end_period = pd.Period("2021-06", freq="M")
+    start_period = pd.to_datetime("1957-03-01")
+    end_period = pd.to_datetime("2021-06-01")
 
     # Keep observations from October 1957 through June 2021
 

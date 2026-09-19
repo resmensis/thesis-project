@@ -37,8 +37,8 @@ def standardize_to_monthly(
     Returns
     -------
     pd.DataFrame
-        DataFrame whose date_col has dtype period[M].
-
+        DataFrame whose date_col has dtype datetime64[ns], always set to the
+        first day of the month.
     Raises
     ------
     KeyError
@@ -95,7 +95,8 @@ def standardize_to_monthly(
         )
 
     # Monthly key: suitable for matching, grouping, and monthly forecasts.
-    df[date_col] = parsed.dt.to_period("M")
+    df[date_col] = parsed.dt.to_period("M").dt.to_timestamp()
+    
 
     return df
 
@@ -140,6 +141,7 @@ def load_macro_monthly(
     df = pd.read_csv(path)
     df.columns = df.columns.str.lower()
     cols = possible_macro_cols
+    df = df.rename(columns={"rfree": "rf"})
     df = df.loc[:, df.columns.isin(cols)]
     date_col = "date" if "date" in df.columns else "yyyymm"
     df = df.rename(columns={date_col: "date"})

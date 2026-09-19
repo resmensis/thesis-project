@@ -5,9 +5,12 @@ import pandas as pd
 
 from numbers import Integral
 from typing import Sequence
+from collections.abc import Hashable
+from typing import Any
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
+from sklearn.preprocessing import QuantileTransformer
 
 
 class GroupedMedianImputer(BaseEstimator, TransformerMixin):
@@ -191,243 +194,6 @@ class GroupedMedianImputer(BaseEstimator, TransformerMixin):
                 f"fallback must be one of {valid_fallbacks}, "
                 f"got {self.fallback!r}."
             )
-
-
-
-
-
-class GroupedLagShiftTransformer111111111111111(BaseEstimator, TransformerMixin):
-    def _init_(self, lag=1, group_col="group_id", value_cols=None):
-        self.lag = lag
-        self.group_col = group_col
-        self.value_cols = value_cols
-
-    def fit(self, X, y=None):
-        self.value_cols_ = self.value_cols or [c for c in X.columns if c != self.group_col]
-        return self
-
-    def transform(self, X):
-        X = X.copy()
-        shifted = X.groupby(self.group_col)[self.value_cols_].shift(self.lag)
-        shifted.columns = [f"{c}_lag{self.lag}" for c in shifted.columns]
-        return pd.concat([X.drop(columns=self.value_cols_), shifted], axis=1)
-
-
-
-
-
-class GroupedLagShiftTransformer222222222222222(BaseEstimator, TransformerMixin):
-    """
-    Apply a grouped pandas shift to selected columns.
-
-    Parameters
-    ----------
-    lag : int, default=1
-        Number of rows by which to shift within each group.
-
-        Positive values create backward lags:
-            groupby(...).shift(1)
-
-        Negative values create forward shifts:
-            groupby(...).shift(-1)
-
-    group_col : str, default="group_id"
-        Column used to define groups.
-
-    value_cols : sequence of str or None, default=None
-        Columns to shift. If None, all columns except group_col are shifted.
-
-    create_new_cols : bool, default=True
-        If True, preserve the original value columns and append shifted columns.
-        If False, replace the original value columns with shifted values.
-
-    suffix : str or None, default=None
-        Suffix used for newly created columns. If None, a suffix is generated
-        from lag, for example "_lag1" or "_shift_forward1".
-    """
-
-    def __init__(
-        self,
-        lag: int = 1,
-        group_col: str = "group_id",
-        value_cols: Sequence[str] | None = None,
-        create_new_cols: bool = True,
-        suffix: str | None = None,
-    ):
-        self.lag = lag
-        self.group_col = group_col
-        self.value_cols = value_cols
-        self.create_new_cols = create_new_cols
-        self.suffix = suffix
-
-    def fit(self, X: pd.DataFrame, y=None):
-        """Validate the input and learn the columns used during transformation."""
-        if not isinstance(X, pd.DataFrame):
-            raise TypeError("X must be a pandas DataFrame.")
-
-        if not isinstance(self.lag, Integral):
-            raise TypeError("lag must be an integer.")
-
-        if not isinstance(self.group_col, str):
-            raise TypeError("group_col must be a string.")
-
-        if not isinstance(self.create_new_cols, bool):
-            raise TypeError("create_new_cols must be a boolean.")
-
-        if self.suffix is not None and not isinstance(self.suffix, str):
-            raise TypeError("suffix must be a string or None.")
-
-        if self.group_col not in X.columns:
-            raise ValueError(
-                f"group_col={self.group_col!r} is not present in X."
-            )
-
-        if self.value_cols is None:
-            value_cols = [
-                column for column in X.columns
-                if column != self.group_col
-            ]
-        else:
-            value_cols = list(self.value_cols)
-
-            missing_cols = [
-                column for column in value_cols
-                if column not in X.columns
-            ]
-
-            if missing_cols:
-                raise ValueError(
-                    f"The following value_cols are missing from X: "
-                    f"{missing_cols}"
-                )
-
-            if self.group_col in value_cols:
-                raise ValueError(
-                    "group_col must not be included in value_cols."
-                )
-
-        if not value_cols:
-            raise ValueError("At least one value column is required.")
-
-        self.value_cols_ = value_cols
-        self.feature_names_in_ = np.asarray(X.columns, dtype=object)
-
-        if self.suffix is None:
-            if self.lag >= 0:
-                suffix = f"_lag{self.lag}"
-            else:
-                suffix = f"_shift_forward{abs(self.lag)}"
-        else:
-            suffix = self.suffix
-
-        self.suffix_ = suffix
-
-        self.shifted_cols_ = [
-            f"{column}{self.suffix_}"
-            for column in self.value_cols_
-        ]
-
-        if len(set(self.shifted_cols_)) != len(self.shifted_cols_):
-            raise ValueError("Generated shifted column names are not unique.")
-
-        if self.create_new_cols:
-            collisions = [
-                column for column in self.shifted_cols_
-                if column in X.columns
-            ]
-
-            if collisions:
-                raise ValueError(
-                    "Generated shifted columns already exist in X: "
-                    f"{collisions}"
-                )
-
-            self.feature_names_out_ = np.asarray(
-                list(X.columns) + self.shifted_cols_,
-                dtype=object,
-            )
-        else:
-            self.feature_names_out_ = np.asarray(
-                [
-                    self.group_col if column == self.group_col
-                    else (
-                        column
-                        if column not in self.value_cols_
-                        else f"{column}{self.suffix_}"
-                    )
-                    for column in X.columns
-                ],
-                dtype=object,
-            )
-
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Shift value columns independently within each group."""
-        check_is_fitted(
-            self,
-            attributes=[
-                "value_cols_",
-                "shifted_cols_",
-                "feature_names_out_",
-            ],
-        )
-
-        if not isinstance(X, pd.DataFrame):
-            raise TypeError("X must be a pandas DataFrame.")
-
-        missing_cols = [
-            column for column in self.feature_names_in_
-            if column not in X.columns
-        ]
-
-        if missing_cols:
-            raise ValueError(
-                f"X is missing columns seen during fit: {missing_cols}"
-            )
-
-        shifted = (
-            X.groupby(
-                self.group_col,
-                sort=False,
-                dropna=False,
-            )[self.value_cols_]
-            .shift(self.lag)
-        )
-
-        if self.create_new_cols:
-            shifted = shifted.copy()
-            shifted.columns = self.shifted_cols_
-
-            return pd.concat(
-                [X.copy(), shifted],
-                axis=1,
-            )
-
-        X_out = X.copy()
-        X_out.loc[:, self.value_cols_] = shifted.to_numpy()
-
-        return X_out
-
-    def get_feature_names_out(
-        self,
-        input_features=None,
-    ) -> np.ndarray:
-        """Return output column names for sklearn compatibility."""
-        check_is_fitted(self, attributes=["feature_names_out_"])
-
-        if input_features is not None:
-            input_features = np.asarray(input_features, dtype=object)
-
-            if not np.array_equal(
-                input_features,
-                self.feature_names_in_,
-            ):
-                raise ValueError(
-                    "input_features do not match the columns seen during fit."
-                )
-
-        return self.feature_names_out_.copy()
 
 
 
@@ -736,3 +502,175 @@ class GroupedLagShiftTransformer(BaseEstimator, TransformerMixin):
                 )
 
         return self.feature_names_out_.copy()
+
+
+class GroupedQuantileTransformer(BaseEstimator, TransformerMixin):
+    """Apply one sklearn QuantileTransformer per group to selected columns.
+
+    Parameters
+    ----------
+    group_col : str or int
+        Group column in a DataFrame, or group-column index for array-like input.
+    value_cols : list[str] or list[int] or None, default=None
+        Columns to transform. For DataFrames, use column names. For array-like
+        input, use column indices in the original input. If None, all columns
+        except group_col are transformed.
+    output_range : tuple[float, float], default=(-1.0, 1.0)
+        Range of the transformed uniform output.
+    n_quantiles : int, default=1000
+        Passed to sklearn.preprocessing.QuantileTransformer.
+    subsample : int or None, default=10000
+        Passed to QuantileTransformer. ``None`` requires a compatible sklearn
+        version.
+    random_state : int or None, default=None
+        Passed to QuantileTransformer.
+    copy : bool, default=True
+        Whether to copy input data before transforming.
+    """
+
+    def __init__(
+        self,
+        group_col: str | int,
+        value_cols: list[str] | None = None,
+        output_range: tuple[float, float] = (-1.0, 1.0),
+        n_quantiles: int = 1000,
+        subsample: int | None = 10000,
+        random_state: int | None = None,
+        copy: bool = True,
+    ) -> None:
+        self.group_col = group_col
+        self.value_cols = value_cols
+        self.output_range = output_range
+        self.n_quantiles = n_quantiles
+        self.subsample = subsample
+        self.random_state = random_state
+        self.copy = copy
+
+    def _validate_params(self) -> None:
+        if len(self.output_range) != 2 or self.output_range[0] >= self.output_range[1]:
+            raise ValueError("output_range must be a pair (low, high) with low < high")
+        if self.n_quantiles < 1:
+            raise ValueError("n_quantiles must be at least 1")
+
+    def _resolve_columns(self, X: Any, fitting: bool = False):
+        if isinstance(X, pd.DataFrame):
+            if not isinstance(self.group_col, str):
+                raise TypeError("group_col must be a column name for DataFrame input")
+            if self.group_col not in X.columns:
+                raise ValueError(f"Unknown group column: {self.group_col!r}")
+
+            if self.value_cols is None:
+                value_cols = [col for col in X.columns if col != self.group_col]
+            else:
+                value_cols = list(self.value_cols)
+                missing = [col for col in value_cols if col not in X.columns]
+                if missing:
+                    raise ValueError(f"Unknown value columns: {missing}")
+                if self.group_col in value_cols:
+                    raise ValueError("group_col cannot also be in value_cols")
+
+            if fitting:
+                self.value_cols_ = np.asarray(value_cols, dtype=object)
+            elif list(value_cols) != list(self.value_cols_):
+                raise ValueError("Input value columns differ from those used during fit")
+
+            return X[self.group_col], X[value_cols], value_cols, True
+
+        array = np.asarray(X)
+        if array.ndim != 2:
+            raise ValueError("X must be a 2-dimensional DataFrame or array-like object")
+        if not isinstance(self.group_col, int):
+            raise TypeError("group_col must be an integer for array-like input")
+        if not 0 <= self.group_col < array.shape[1]:
+            raise ValueError("group_col is outside the input columns")
+
+        if self.value_cols is None:
+            value_cols = [i for i in range(array.shape[1]) if i != self.group_col]
+        else:
+            value_cols = list(self.value_cols)
+            if any(not isinstance(i, int) for i in value_cols):
+                raise TypeError("value_cols must contain integer indices for array-like input")
+            if any(i < 0 or i >= array.shape[1] for i in value_cols):
+                raise ValueError("value_cols contains an index outside the input columns")
+            if self.group_col in value_cols:
+                raise ValueError("group_col cannot also be in value_cols")
+
+        if fitting:
+            self.value_cols_ = np.asarray(value_cols, dtype=int)
+        elif not np.array_equal(value_cols, self.value_cols_):
+            raise ValueError("Input value columns differ from those used during fit")
+
+        return array[:, self.group_col], array[:, value_cols], value_cols, False
+
+    def fit(self, X: Any, y: Any = None):
+        self._validate_params()
+        groups, values, value_cols, is_dataframe = self._resolve_columns(X, fitting=True)
+        numeric = values.apply(pd.to_numeric, errors="raise").to_numpy(dtype=float) if is_dataframe else np.asarray(values, dtype=float)
+
+        self.n_features_in_ = numeric.shape[1]
+        self.groups_ = pd.unique(groups)
+        self.group_transformers_: dict[Hashable, list[QuantileTransformer | None]] = {}
+        self._is_dataframe_ = is_dataframe
+
+        for group in self.groups_:
+            group_mask = np.asarray(groups == group)
+            transformers = []
+            for j in range(self.n_features_in_):
+                observed = numeric[group_mask, j]
+                observed = observed[~np.isnan(observed)]
+                if observed.size == 0:
+                    transformers.append(None)
+                    continue
+
+                kwargs = {
+                    "n_quantiles": min(self.n_quantiles, observed.size),
+                    "output_distribution": "uniform",
+                    "random_state": self.random_state,
+                    "copy": self.copy,
+                }
+                if self.subsample is not None:
+                    kwargs["subsample"] = self.subsample
+
+                transformer = QuantileTransformer(**kwargs)
+                transformer.fit(observed.reshape(-1, 1))
+                transformers.append(transformer)
+
+            self.group_transformers_[group] = transformers
+
+        return self
+
+    def transform(self, X: Any):
+        check_is_fitted(self, ["group_transformers_", "value_cols_"])
+        groups, values, value_cols, is_dataframe = self._resolve_columns(X, fitting=False)
+        numeric = values.apply(pd.to_numeric, errors="raise").to_numpy(dtype=float) if is_dataframe else np.asarray(values, dtype=float)
+
+        result = X.copy() if self.copy else X
+        low, high = self.output_range
+
+        for group in pd.unique(groups):
+            if group not in self.group_transformers_:
+                raise ValueError(f"Unknown group {group!r} encountered during transform")
+
+            group_mask = np.asarray(groups == group)
+            for j, transformer in enumerate(self.group_transformers_[group]):
+                valid = group_mask & ~np.isnan(numeric[:, j])
+                if transformer is None or not valid.any():
+                    continue
+
+                uniform = transformer.transform(numeric[valid, j].reshape(-1, 1)).ravel()
+                result_values = low + (high - low) * uniform
+
+                if is_dataframe:
+                    result.loc[result.index[valid], value_cols[j]] = result_values
+                else:
+                    result[valid, value_cols[j]] = result_values
+
+        return result
+
+    def get_feature_names_out(self, input_features=None):
+        check_is_fitted(self, ["value_cols_"])
+        if input_features is not None:
+            return np.asarray(input_features, dtype=object)
+        if self._is_dataframe_:
+            return np.asarray(self.feature_names_in_, dtype=object) if hasattr(self, "feature_names_in_") else self.value_cols_
+        return np.asarray([f"x{i}" for i in range(self.n_features_in_)], dtype=object)
