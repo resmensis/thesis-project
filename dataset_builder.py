@@ -397,12 +397,6 @@ def build_complete_dataset(
     macro = load_macro_monthly(macro_path, possible_marco_cols)
     ds = load_datashare(datashare_path)
 
-    #-------------
-    date_1987_05 = pd.Period("1987-05-01", freq="M")
-    #-------------
-    #-------------
-    test_1 = ds.loc[ds["date"] == date_1987_05].copy()
-    #-------------
 
     # Columns 3-96 in datashare.csv = 94 characteristics.
     characteristic_cols = cols_chara
@@ -416,36 +410,26 @@ def build_complete_dataset(
         # validate="one_to_one",
     )
 
-    #-------------
-    test_2 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
 
     logger.debug("Merging with macro data")
     merged = merged.merge(macro, on="date", how="left")
 
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
 
-
-    #-------------
-    test_3 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
-
     # ------------------------------------------------------------------
-    # ret_total
+    # excess_ret_total
     # ------------------------------------------------------------------
-    logger.debug("Creating ret_total")
+    logger.debug("Creating excess_ret_total")
 
     has_return_data = (merged["ret"].notna() | merged["dlret"].notna())
 
-    merged["ret_total"] = (
+    merged["excess_ret_total"] = (
         (1.0 + merged["ret"].fillna(0.0))
         * (1.0 + merged["dlret"].fillna(0.0))
-        - 1.0
+        - 1.0 - merged["rf"]
     ).where(has_return_data)    
 
-    #-------------
-    test_4 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
+
     summary_stats_extended(
         merged,
         date_col="date",
@@ -455,17 +439,13 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # Missingness visualisation and imputation
     # ------------------------------------------------------------------
-    cols_chara_and_ret_total = characteristic_cols + ["ret_total"]
+    cols_chara_and_excess_ret_total = characteristic_cols + ["excess_ret_total"]
 
     # Visualisation before imputation
-    missing_before = compute_missingness_for_characteristics(merged, cols_chara_and_ret_total)
+    missing_before = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
 
     before_csv = f"{descriptives_path}/charas_missingness_before.csv"
     missing_before.to_csv(before_csv, index=False)
-
-    #-------------
-    test_5 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
 
  
     logger.debug(f"Saved missingness before imputation: {before_csv}")
@@ -475,7 +455,7 @@ def build_complete_dataset(
 
     imputer = GroupedMedianImputer(
         group_cols=["date"],
-        value_cols=cols_chara_and_ret_total,
+        value_cols=cols_chara_and_excess_ret_total,
         fallback="constant",
         fill_value=0.0
     )
@@ -484,15 +464,12 @@ def build_complete_dataset(
     merged = pd.DataFrame(merged)
 
     """
-    merged = impute_characteristics_by_month_cross_sectional_median(merged, cols_chara_and_ret_total)
+    merged = impute_characteristics_by_month_cross_sectional_median(merged, cols_chara_and_excess_ret_total)
     """
 
-    #-------------
-    test_5 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
 
     # Visualisation after imputation
-    missing_after = compute_missingness_for_characteristics(merged, cols_chara_and_ret_total)
+    missing_after = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
 
     after_csv = f"{descriptives_path}/charas_missingness_after.csv"
     missing_after.to_csv(after_csv, index=False)
@@ -519,7 +496,7 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # Quantile Transformation 
     # ------------------------------------------------------------------
-
+    """
     scalar = GroupedQuantileTransformer(
         group_col="date",
         value_cols=cols_chara,
@@ -536,15 +513,12 @@ def build_complete_dataset(
         output_path=descriptives_path,
         output_name="summary_3",
     )
-
+    """
     # ------------------------------------------------------------------
     # Temporal shifts 
     # ------------------------------------------------------------------
-    #-------------
-    test_6 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
-    shift_1month = ["ret_total", *cols_vars_monthly]
+    shift_1month = ["excess_ret_total", *cols_vars_monthly]
 
 
     transformer_1month = GroupedLagShiftTransformer(
@@ -552,7 +526,7 @@ def build_complete_dataset(
         group_col="permno",
         value_cols=shift_1month,
         create_new_cols=True,
-        rename_mode="lagged",
+        rename_mode="none",
         suffix=None,
         original_suffix="_original",
     )
@@ -561,7 +535,7 @@ def build_complete_dataset(
         group_col="permno",
         value_cols=cols_vars_quarterly,
         create_new_cols=True,
-        rename_mode="lagged",
+        rename_mode="none",
         suffix=None,
         original_suffix="_original",
     )
@@ -570,15 +544,22 @@ def build_complete_dataset(
         group_col="permno",
         value_cols=cols_vars_annual,
         create_new_cols=True,
-        rename_mode="lagged",
+        rename_mode="none",
         suffix=None,
         original_suffix="_original",
     )
 
+    logger.info("Creating 1-month shift.")
     merged = transformer_1month.fit_transform(merged)
+    logger.debug("1-month shift created.")
+    logger.info("Creating 3-month shift.")
     merged = transformer_3months.fit_transform(merged)
+    logger.debug("3-month shift created.")
+    logger.info("Creating 6-month shift.")
     merged = transformer_6months.fit_transform(merged)
+    logger.debug("6-month shift created.")
     merged = pd.DataFrame(merged)
+    logger.debug("Df after shifts recreated.")
 
     summary_stats_extended(
         merged,
@@ -587,16 +568,10 @@ def build_complete_dataset(
         output_name="summary_4",
     )
 
-    #-------------
-    test_7 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
-
-
-
 
     # Define inclusive monthly boundaries
-    start_period = pd.to_datetime("1957-03-01")
-    end_period = pd.to_datetime("2021-06-01")
+    start_period = pd.Period("1957-03-01")
+    end_period = pd.Period("2021-06-01")
 
     # Keep observations from October 1957 through June 2021
 
@@ -609,12 +584,8 @@ def build_complete_dataset(
     logger.debug(f"Dataset reduced due to missing values to : {merged["date"].min()} and {merged["date"].max()}")
 
 
-    #-------------
-    test_8 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
-
     # Visualisation of missingness after temporal cuts
-    missing_after_cut = compute_missingness_for_characteristics(merged, cols_chara_and_ret_total)
+    missing_after_cut = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
 
     after_cut_csv = f"{descriptives_path}/charas_missingness_after_cut.csv"
     missing_after_cut.to_csv(after_cut_csv, index=False)
@@ -631,40 +602,6 @@ def build_complete_dataset(
         title="Missing Data Percentage: Before vs After Imputation vs After Temporal Reduction",
     )
     logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
-
-
-    #-------------
-    test_9 = merged.loc[merged["date"] == date_1987_05].copy()
-    #-------------
-    #-------------
-    test_1_csv = f"{descriptives_path}/test_1.csv"
-    test_1.to_csv(test_1_csv, index=False)
-
-    test_2_csv = f"{descriptives_path}/test_2.csv"
-    test_2.to_csv(test_2_csv, index=False)
-
-    test_3_csv = f"{descriptives_path}/test_3.csv"
-    test_3.to_csv(test_3_csv, index=False)
-
-    test_4_csv = f"{descriptives_path}/test_4.csv"
-    test_4.to_csv(test_4_csv, index=False)
-
-    test_5_csv = f"{descriptives_path}/test_5.csv"
-    test_5.to_csv(test_5_csv, index=False)
-
-    test_6_csv = f"{descriptives_path}/test_6.csv"
-    test_6.to_csv(test_6_csv, index=False)
-
-    test_7_csv = f"{descriptives_path}/test_7.csv"
-    test_7.to_csv(test_7_csv, index=False)
-
-    test_8_csv = f"{descriptives_path}/test_8.csv"
-    test_8.to_csv(test_8_csv, index=False)
-
-    test_9_csv = f"{descriptives_path}/test_9.csv"
-    test_9.to_csv(test_9_csv, index=False)
-    #-------------
-
 
     
     logger.info(f"Complete dataset built: {merged.shape}")
