@@ -95,8 +95,7 @@ def standardize_to_monthly(
         )
 
     # Monthly key: suitable for matching, grouping, and monthly forecasts.
-    # df[date_col] = parsed.dt.to_period("M").dt.to_timestamp()
-    df[date_col] = parsed.dt.date
+    df[date_col] = parsed.dt.to_period("M").dt.to_timestamp()
     
 
     return df

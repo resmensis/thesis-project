@@ -543,35 +543,24 @@ def build_complete_dataset(
     )
 
 
-    # Define inclusive monthly boundaries
-    start_period = "1957-03-01"
-    end_period = "2021-06-01"
-
-    # Keep observations from October 1957 through June 2021
-
-    mask = (
-        (merged["date"] >= start_period.dt.to_period("M").dt.to_timestamp())
-        & (merged["date"] <= end_period.dt.to_period("M").dt.to_timestamp())
-    )
-    merged = merged.loc[mask].copy()
-
-    logger.debug(f"Dataset reduced due to missing values to : {merged["date"].min()} and {merged["date"].max()}")
+    # Drop NaN
+    merged = merged.dropna(subset=cols_chara_and_excess_ret_total)
 
 
     # Visualisation of missingness after temporal cuts
-    missing_after_cut = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
+    missing_after_drop = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
 
-    after_cut_csv = f"{descriptives_path}/charas_missingness_after_cut.csv"
-    missing_after_cut.to_csv(after_cut_csv, index=False)
+    after_drop_csv = f"{descriptives_path}/charas_missingness_after_drop.csv"
+    missing_after_drop.to_csv(after_drop_csv, index=False)
 
-    logger.debug(f"Saved missingness after temporal cut: {after_cut_csv}")
+    logger.debug(f"Saved missingness after temporal cut: {after_drop_csv}")
 
     # Comparison plot
     comparison_three_jpg = f"{descriptives_path}/charas_missingness_comparison_three.jpg"
     save_missingness_three_comparison_plot(
         missing_before,
         missing_after,
-        missing_after_cut,
+        missing_after_drop,
         comparison_three_jpg,
         title="Missing Data Percentage: Before vs After Imputation vs After Temporal Reduction",
     )
@@ -581,7 +570,7 @@ def build_complete_dataset(
         merged,
         date_col="date",
         output_path=descriptives_path,
-        output_name="summary_timeframe_adjusted",
+        output_name="summary_final_NaN_dropped"
     )
 
     
