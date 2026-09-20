@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import logging
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import QuantileTransformer
 
 from io_utils import save_parquet, save_pickle
+from dataset_builder import summary_stats_extended
+from transformers import GroupedQuantileTransformer
 
 logger = logging.getLogger("eap_ml.features")
 
@@ -159,6 +162,7 @@ def build_feature_panel(
     df: pd.DataFrame,
     out_path_panel: str,
     out_path_cols: str,
+    descriptives_path: str,
     cols_chara: list[str],
     cols_macro: list[str],
     sic2_column: str,
@@ -188,6 +192,32 @@ def build_feature_panel(
         date_col="date",
         n_quantiles=n_quantiles,        
         random_state=random_state,
+    )
+
+    """
+    scalar = GroupedQuantileTransformer(
+        group_col="date",
+        value_cols=cols_chara,
+        output_range=(-1, 1),
+        random_state=random_state,
+    )
+
+    merged = scalar.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_scaled",
+    )
+    """
+
+    summary_stats_extended(
+        out,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_timeframe_adjusted",
     )
 
 

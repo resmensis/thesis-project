@@ -83,21 +83,16 @@ class SplitConfig:
 @dataclass
 class DataRegimeConfig:
     mode: str = "coding"  # 'full' or 'coding'
+    include_macro_interactions: bool = False
+    ols3_size_col: str = "size"
+    ols3_bm_col: str = "bm"
+    ols3_mom_col: str = "mom12"
     coding_max_stocks: int = 500
     chara_cols_coding: List[str] = field(default_factory=lambda: [
         "size", "mom12", "turnover", "dolvol", "ret_1_0", 
         "prof", "roe", "stdacc", "cash", "saleq_growth", 
         "bm", "asset_growth", "inv", "op", "ni_at"
     ])
-    include_macro_interactions: bool = True
-    """
-    coding_keep_macro_count: int = 2
-    coding_keep_industry_count: int = 10
-    coding_max_interactions: int = 12    
-    """
-    ols3_size_col: str = "size"
-    ols3_bm_col: str = "bm"
-    ols3_mom_col: str = "mom12"
 
 
 @dataclass

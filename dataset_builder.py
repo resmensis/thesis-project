@@ -3,14 +3,13 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
+from pandas import Timestamp
 from pandas.api.types import is_numeric_dtype
 import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
 from transformers import GroupedMedianImputer, GroupedQuantileTransformer, GroupedLagShiftTransformer
-
-
 
 from pathlib import Path
 from typing import Optional
@@ -70,30 +69,6 @@ def save_missingness_comparison_plot(
     plt.tight_layout()
     plt.savefig(out_jpg_path, dpi=200, bbox_inches="tight")
     plt.close()
-
-
-def impute_characteristics_by_month_cross_sectional_median(
-    df: pd.DataFrame,
-    characteristic_cols: list[str],
-) -> pd.DataFrame:
-    """
-    Impute missing characteristics using the cross-sectional median within each month.
-
-    This follows the Gu, Kelly, and Xiu (2020) approach conceptually:
-    missing characteristics are replaced with cross-sectional medians.
-    """
-    out = df.copy()
-
-    for col in characteristic_cols:
-        monthly_median = (
-            out.groupby("date", sort=False)[col]
-            .transform("median")
-        )
-
-        out[col] = out[col].fillna(monthly_median)
-
-    return out
-
 
 
 def save_missingness_three_comparison_plot(
@@ -434,7 +409,7 @@ def build_complete_dataset(
         merged,
         date_col="date",
         output_path=descriptives_path,
-        output_name="summary_1",
+        output_name="summary_loaded",
     )
     # ------------------------------------------------------------------
     # Missingness visualisation and imputation
@@ -463,10 +438,6 @@ def build_complete_dataset(
     merged = imputer.fit_transform(merged)
     merged = pd.DataFrame(merged)
 
-    """
-    merged = impute_characteristics_by_month_cross_sectional_median(merged, cols_chara_and_excess_ret_total)
-    """
-
 
     # Visualisation after imputation
     missing_after = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
@@ -491,7 +462,7 @@ def build_complete_dataset(
         merged,
         date_col="date",
         output_path=descriptives_path,
-        output_name="summary_2",
+        output_name="summary_imputed",
     )
     # ------------------------------------------------------------------
     # Quantile Transformation 
@@ -511,7 +482,7 @@ def build_complete_dataset(
         merged,
         date_col="date",
         output_path=descriptives_path,
-        output_name="summary_3",
+        output_name="summary_scaled",
     )
     """
     # ------------------------------------------------------------------
@@ -525,8 +496,8 @@ def build_complete_dataset(
         lag=-1,
         group_col="permno",
         value_cols=shift_1month,
-        create_new_cols=True,
-        rename_mode="none",
+        create_new_cols=False,
+        rename_mode="lagged",
         suffix=None,
         original_suffix="_original",
     )
@@ -534,8 +505,8 @@ def build_complete_dataset(
         lag=-3,
         group_col="permno",
         value_cols=cols_vars_quarterly,
-        create_new_cols=True,
-        rename_mode="none",
+        create_new_cols=False,
+        rename_mode="lagged",
         suffix=None,
         original_suffix="_original",
     )
@@ -543,8 +514,8 @@ def build_complete_dataset(
         lag=-6,
         group_col="permno",
         value_cols=cols_vars_annual,
-        create_new_cols=True,
-        rename_mode="none",
+        create_new_cols=False,
+        rename_mode="lagged",
         suffix=None,
         original_suffix="_original",
     )
@@ -552,12 +523,15 @@ def build_complete_dataset(
     logger.info("Creating 1-month shift.")
     merged = transformer_1month.fit_transform(merged)
     logger.debug("1-month shift created.")
+
     logger.info("Creating 3-month shift.")
     merged = transformer_3months.fit_transform(merged)
     logger.debug("3-month shift created.")
+
     logger.info("Creating 6-month shift.")
     merged = transformer_6months.fit_transform(merged)
     logger.debug("6-month shift created.")
+
     merged = pd.DataFrame(merged)
     logger.debug("Df after shifts recreated.")
 
@@ -565,19 +539,19 @@ def build_complete_dataset(
         merged,
         date_col="date",
         output_path=descriptives_path,
-        output_name="summary_4",
+        output_name="summary_shifted",
     )
 
 
     # Define inclusive monthly boundaries
-    start_period = pd.Period("1957-03-01")
-    end_period = pd.Period("2021-06-01")
+    start_period = "1957-03-01"
+    end_period = "2021-06-01"
 
     # Keep observations from October 1957 through June 2021
 
     mask = (
-        (merged["date"] >= start_period)
-        & (merged["date"] <= end_period)
+        (merged["date"] >= start_period.dt.to_period("M").dt.to_timestamp())
+        & (merged["date"] <= end_period.dt.to_period("M").dt.to_timestamp())
     )
     merged = merged.loc[mask].copy()
 
@@ -602,6 +576,13 @@ def build_complete_dataset(
         title="Missing Data Percentage: Before vs After Imputation vs After Temporal Reduction",
     )
     logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
+
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_timeframe_adjusted",
+    )
 
     
     logger.info(f"Complete dataset built: {merged.shape}")
