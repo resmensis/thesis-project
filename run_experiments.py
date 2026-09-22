@@ -34,7 +34,7 @@ def main():
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig()
     split_cfg = SplitConfig()
-    regime_cfg = DataRegimeConfig(mode="full")
+    regime_cfg = DataRegimeConfig(mode="coding")
     grid_cfg = HyperGridConfig(use_extended_grids=False)
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
