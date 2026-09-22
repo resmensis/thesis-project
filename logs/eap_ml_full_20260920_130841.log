@@ -1,0 +1,18 @@
+2026-09-20 13:08:41 | INFO | eap_ml | Logger initialized.
+2026-09-20 13:08:41 | INFO | eap_ml | Regime mode: full
+2026-09-20 13:08:41 | INFO | eap_ml | Log file: logs\eap_ml_full_20260920_130841.log
+2026-09-20 13:08:41 | INFO | eap_ml | Starting experiment run.
+2026-09-20 13:08:41 | INFO | eap_ml | Random seed: 42
+2026-09-20 13:08:41 | INFO | eap_ml | Cache dir: cache
+2026-09-20 13:08:41 | INFO | eap_ml | Data regime: full
+2026-09-20 13:08:41 | INFO | eap_ml | Model selection: Running ALL models (including LSTM)
+2026-09-20 13:08:41 | INFO | eap_ml | Building complete dataset.
+2026-09-20 13:08:47 | INFO | eap_ml | Loading cached dataset from cache/complete_dataset.parquet
+2026-09-20 13:08:47 | INFO | eap_ml | Complete dataset shape: (3922932, 109)
+2026-09-20 13:08:47 | INFO | eap_ml | Building feature panel (cache disabled or force_refit).
+2026-09-20 13:08:47 | INFO | eap_ml.features | Building feature panel, mode=full, interactions=True
+2026-09-20 13:08:47 | DEBUG | eap_ml.features | Creating industry dummies.
+2026-09-20 13:08:53 | DEBUG | eap_ml.features | Created 74 industry dummies
+2026-09-20 13:09:05 | DEBUG | eap_ml.features | Identified 94 char, 8 macro, 74 industry dummies
+2026-09-20 13:09:05 | DEBUG | eap_ml.features | Scaling 94 characteristics cross-sectionally
+2026-09-20 13:18:32 | DEBUG | eap_ml.features | Creating macro interactions: 94 chars x 8 macros

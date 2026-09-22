@@ -171,7 +171,7 @@ def build_feature_panel(
     regime_config,
     save_feature_panel: bool,
 ):
-    logger.info(f"Building feature panel, mode={regime_config.mode}")
+    logger.info(f"Building feature panel, mode={regime_config.mode}, interactions={regime_config.include_macro_interactions}")
 
 
     # ------------------------------------------------------------------
@@ -184,45 +184,7 @@ def build_feature_panel(
 
 
     # ------------------------------------------------------------------
-    # 2. Scale characteristics cross-sectionally month by month to [-1, 1]
-    # ------------------------------------------------------------------
-    out = scale_chars_cross_sectionally_by_month(
-        out,
-        characteristic_cols=cols_chara,
-        date_col="date",
-        n_quantiles=n_quantiles,        
-        random_state=random_state,
-    )
-
-    """
-    scalar = GroupedQuantileTransformer(
-        group_col="date",
-        value_cols=cols_chara,
-        output_range=(-1, 1),
-        random_state=random_state,
-    )
-
-    merged = scalar.fit_transform(merged)
-    merged = pd.DataFrame(merged)
-
-    summary_stats_extended(
-        merged,
-        date_col="date",
-        output_path=descriptives_path,
-        output_name="summary_scaled",
-    )
-    """
-
-    summary_stats_extended(
-        out,
-        date_col="date",
-        output_path=descriptives_path,
-        output_name="summary_timeframe_adjusted",
-    )
-
-
-    # ------------------------------------------------------------------
-    # 3. Interactions: Chara x Macro
+    # 2. Interactions: Chara x Macro
     # ------------------------------------------------------------------
     if regime_config.mode == "full":
         if regime_config.include_macro_interactions:
@@ -231,11 +193,18 @@ def build_feature_panel(
         interaction_cols = [c for c in out.columns if "__x__" in c]
         feature_cols = cols_chara + interaction_cols + industry_cols
 
+        summary_stats_extended(
+        out,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_feature_full",
+        )
 
+    
     # ------------------------------------------------------------------
-    # 4. Sample reduction for coding version
+    # 3. Sample reduction for coding version
     # ------------------------------------------------------------------
-    else:
+    if regime_config.mode == "coding":
         out = sample_permno_coding(
             out,
             n_permnos=regime_config.coding_max_stocks,
@@ -246,6 +215,12 @@ def build_feature_panel(
         char_cols_coding = regime_config.chara_cols_coding
         feature_cols = char_cols_coding
 
+        summary_stats_extended(
+        out,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_feature_coding",
+        )
 
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")

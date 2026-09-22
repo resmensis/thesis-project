@@ -1,0 +1,38 @@
+2026-09-22 14:01:27 | INFO | eap_ml | Logger initialized.
+2026-09-22 14:01:27 | INFO | eap_ml | Regime mode: full
+2026-09-22 14:01:27 | INFO | eap_ml | Log file: logs\eap_ml_full_20260922_140127.log
+2026-09-22 14:01:27 | INFO | eap_ml | Starting experiment run.
+2026-09-22 14:01:27 | INFO | eap_ml | Random seed: 42
+2026-09-22 14:01:27 | INFO | eap_ml | Cache dir: cache
+2026-09-22 14:01:27 | INFO | eap_ml | Data regime: full
+2026-09-22 14:01:27 | INFO | eap_ml | Building complete dataset, output: cache/complete_dataset.parquet
+2026-09-22 14:01:27 | DEBUG | eap_ml | Loading source datasets
+2026-09-22 14:01:27 | DEBUG | eap_ml.data_inputs | Loading CRSP monthly data from C:/Coding/Project/data/crsp_monthly.csv
+2026-09-22 14:01:35 | DEBUG | eap_ml.data_inputs | Standardizing date of CRSP
+2026-09-22 14:01:46 | DEBUG | eap_ml.data_inputs | CRSP loaded: 4594389 rows
+2026-09-22 14:01:46 | DEBUG | eap_ml.data_inputs | Loading macro data from C:/Coding/Project/data/Data2024_monthly_goyal.csv
+2026-09-22 14:01:46 | DEBUG | eap_ml.data_inputs | Standardizing date of Macro
+2026-09-22 14:01:46 | DEBUG | eap_ml.data_inputs | Macro loaded: 1848 rows, columns: ['date', 'tbl', 'rf', 'd/p', 'e/p', 'b/m', 'tms', 'dfy', 'ntis', 'svar']
+2026-09-22 14:01:46 | DEBUG | eap_ml.data_inputs | Loading datashare from C:/Coding/Project/data/datashare.csv
+2026-09-22 14:02:56 | DEBUG | eap_ml.data_inputs | Standardizing date of datashare
+2026-09-22 14:03:04 | DEBUG | eap_ml.data_inputs | Datashare loaded: 4117300 rows, 97 columns
+2026-09-22 14:03:04 | DEBUG | eap_ml | Identified 94 characteristic columns
+2026-09-22 14:03:04 | DEBUG | eap_ml | Merging datashare with CRSP
+2026-09-22 14:03:23 | DEBUG | eap_ml | Merging with macro data
+2026-09-22 14:04:25 | DEBUG | eap_ml | Creating excess_ret_total
+2026-09-22 14:06:18 | DEBUG | eap_ml | Saved missingness before imputation: descriptives/charas_missingness_before.csv
+2026-09-22 14:06:18 | INFO | eap_ml | Imputing missing characteristics using monthly cross-sectional medians
+2026-09-22 14:07:26 | DEBUG | eap_ml | Saved missingness after imputation: descriptives/charas_missingness_after.csv
+2026-09-22 14:07:28 | DEBUG | eap_ml | Saved missingness comparison plot: descriptives/charas_missingness_comparison.jpg
+2026-09-22 14:08:39 | INFO | eap_ml | Creating 1-month shift.
+2026-09-22 14:08:42 | DEBUG | eap_ml | 1-month shift created.
+2026-09-22 14:08:42 | INFO | eap_ml | Creating 3-month shift.
+2026-09-22 14:08:44 | DEBUG | eap_ml | 3-month shift created.
+2026-09-22 14:08:44 | INFO | eap_ml | Creating 6-month shift.
+2026-09-22 14:08:48 | DEBUG | eap_ml | 6-month shift created.
+2026-09-22 14:08:48 | DEBUG | eap_ml | Df after shifts recreated.
+2026-09-22 14:10:03 | DEBUG | eap_ml | Saved missingness after temporal cut: descriptives/charas_missingness_after_drop.csv
+2026-09-22 14:10:03 | DEBUG | eap_ml | Saved missingness comparison plot: descriptives/charas_missingness_comparison.jpg
+2026-09-22 14:15:57 | DEBUG | eap_ml | Grouped Quantile Transformer test before
+2026-09-22 14:16:53 | DEBUG | eap_ml | Grouped Quantile Transformer test after
+2026-09-22 15:55:50 | INFO | eap_ml | Complete dataset built: (3922932, 109)

@@ -464,27 +464,8 @@ def build_complete_dataset(
         output_path=descriptives_path,
         output_name="summary_imputed",
     )
-    # ------------------------------------------------------------------
-    # Quantile Transformation 
-    # ------------------------------------------------------------------
-    """
-    scalar = GroupedQuantileTransformer(
-        group_col="date",
-        value_cols=cols_chara,
-        output_range=(-1, 1),
-        random_state=random_state,
-    )
 
-    merged = scalar.fit_transform(merged)
-    merged = pd.DataFrame(merged)
 
-    summary_stats_extended(
-        merged,
-        date_col="date",
-        output_path=descriptives_path,
-        output_name="summary_scaled",
-    )
-    """
     # ------------------------------------------------------------------
     # Temporal shifts 
     # ------------------------------------------------------------------
@@ -571,6 +552,28 @@ def build_complete_dataset(
         date_col="date",
         output_path=descriptives_path,
         output_name="summary_final_NaN_dropped"
+    )
+
+
+    # ------------------------------------------------------------------
+    # Quantile Transformation 
+    # ------------------------------------------------------------------
+
+    scalar = GroupedQuantileTransformer(
+        group_col="date",
+        value_cols=cols_chara,
+        output_range=(-1, 1),
+        random_state=random_state,
+    )
+
+    merged = scalar.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+
+    summary_stats_extended(
+        merged,
+        date_col="date",
+        output_path=descriptives_path,
+        output_name="summary_scaled",
     )
 
     
