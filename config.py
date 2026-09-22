@@ -284,5 +284,5 @@ class ModelSelectionConfig:
     - All "OLS" models use HuberRegressor (robust regression) as per Gu et al. (2020)
     """
     run_all_models: bool = False  # If True, run all models (including LSTM) - DEFAULT
-    # models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
-    models_to_run: Optional[List[str]] = ["OLS_3"]
+    models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
+    # models_to_run: List[str] = field(default_factory=lambda: ["OLS_3"])

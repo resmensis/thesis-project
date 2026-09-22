@@ -1,1 +1,4 @@
 cache/complete_dataset.parquet
+cache/feature_cols_coding.pkl
+.gitignore
+cache/feature_panel_coding.parquet

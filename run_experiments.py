@@ -39,7 +39,8 @@ def main():
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
-    model_cfg = ModelSelectionConfig()
+    model_cfg = ModelSelectionConfig(run_all_models = False,
+           models_to_run = ["OLS_3"])
 
     # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)

@@ -1,0 +1,19 @@
+2026-09-22 19:14:02 | INFO | eap_ml | Logger initialized.
+2026-09-22 19:14:02 | INFO | eap_ml | Regime mode: coding
+2026-09-22 19:14:02 | INFO | eap_ml | Log file: logs\eap_ml_coding_20260922_191402.log
+2026-09-22 19:14:02 | INFO | eap_ml | Starting experiment run.
+2026-09-22 19:14:02 | INFO | eap_ml | Random seed: 42
+2026-09-22 19:14:02 | INFO | eap_ml | Cache dir: cache
+2026-09-22 19:14:02 | INFO | eap_ml | Data regime: coding
+2026-09-22 19:14:02 | INFO | eap_ml | Model selection: Running custom subset: ['OLS_3']
+2026-09-22 19:14:02 | INFO | eap_ml | Building complete dataset.
+2026-09-22 19:14:11 | INFO | eap_ml | Loading cached dataset from cache/complete_dataset.parquet
+2026-09-22 19:14:11 | INFO | eap_ml | Complete dataset shape: (3922932, 109)
+2026-09-22 19:14:11 | INFO | eap_ml | Building feature panel (cache disabled or force_refit).
+2026-09-22 19:14:11 | INFO | eap_ml.features | Building feature panel, mode=coding, interactions=True
+2026-09-22 19:14:11 | DEBUG | eap_ml.features | Creating industry dummies.
+2026-09-22 19:14:18 | DEBUG | eap_ml.features | Created 74 industry dummies
+2026-09-22 19:14:31 | DEBUG | eap_ml.features | Identified 94 char, 8 macro, 74 industry dummies
+2026-09-22 19:14:34 | INFO | eap_ml.features | Feature panel built: (65667, 183), 15 feature columns
+2026-09-22 19:14:36 | INFO | eap_ml | Feature panel shape: (65667, 183)
+2026-09-22 19:14:36 | INFO | eap_ml | Number of feature columns: 15
