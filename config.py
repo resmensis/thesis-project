@@ -237,8 +237,7 @@ class ModelSelectionConfig:
     
     Gu et al. (2020) model specifications:
     - OLS_3: HuberRegressor with 3 factors (size, value, momentum) - benchmark model
-    - OLS_full: HuberRegressor with all features
-    - Huber: HuberRegressor with tuned hyperparameters (epsilon, alpha)
+    - OLS_full: HuberRegressor with all features with tuned hyperparameters (epsilon, alpha)
     - PCR: Principal Component Regression (PCA + HuberRegressor)
     - PLS: Partial Least Squares regression
     - GBRT: Gradient Boosted Regression Trees
@@ -257,7 +256,7 @@ class ModelSelectionConfig:
        run_all_models = True
        models_to_run = None  # or any value, will be ignored
        ```
-       Models run: OLS_3, OLS_full, Huber, PCR, PLS, GBRT, RandomForest, MLP, LSTM
+       Models run: OLS_3, OLS_full, PCR, PLS, GBRT, RandomForest, MLP, LSTM
     
     2. Run only OLS-3 benchmark (fastest, for debugging):
        ```python
@@ -276,7 +275,7 @@ class ModelSelectionConfig:
     4. Run all models except LSTM (faster than full ensemble):
        ```python
        run_all_models = False
-       models_to_run = ["OLS_3", "OLS_full", "Huber", "PCR", "PLS", "GBRT", "RandomForest", "MLP"]
+       models_to_run = ["OLS_3", "OLS_full", "PCR", "PLS", "GBRT", "RandomForest", "MLP"]
        ```
     
     Notes:
@@ -284,5 +283,6 @@ class ModelSelectionConfig:
     - OLS_3 is the Gu et al. (2020) benchmark model and should always be included
     - All "OLS" models use HuberRegressor (robust regression) as per Gu et al. (2020)
     """
-    run_all_models: bool = True  # If True, run all models (including LSTM) - DEFAULT
-    models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
+    run_all_models: bool = False  # If True, run all models (including LSTM) - DEFAULT
+    # models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
+    models_to_run: Optional[List[str]] = ["OLS_3"]
