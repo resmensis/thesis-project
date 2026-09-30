@@ -1,0 +1,9 @@
+2026-09-30 13:28:25 | INFO | eap_ml | Logger initialized.
+2026-09-30 13:28:25 | INFO | eap_ml | Regime mode: coding
+2026-09-30 13:28:25 | INFO | eap_ml | Log file: logs\eap_ml_coding_20260930_132825.log
+2026-09-30 13:28:25 | INFO | eap_ml | Starting experiment run.
+2026-09-30 13:28:25 | INFO | eap_ml | Random seed: 42
+2026-09-30 13:28:25 | INFO | eap_ml | Cache dir: cache
+2026-09-30 13:28:25 | INFO | eap_ml | Data regime: coding
+2026-09-30 13:28:25 | INFO | eap_ml | Model selection: Running custom subset: ['OLS_3']
+2026-09-30 13:28:25 | INFO | eap_ml | Building complete dataset.
