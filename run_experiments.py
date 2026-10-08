@@ -94,8 +94,8 @@ def main():
 
         cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
         
-        if cached_panel is not None and cached_cols is not None:
-            logger.info(f"Feature panel and cols found in cashe. Skipping building/loading dataset.")       
+        if cached_panel is not None and cached_cols is not None and not cache_cfg.force_rebuild_feature_set:
+                logger.info(f"Feature panel and cols found in cashe. Skipping building/loading dataset.")
         elif cached_dataset is not None:
             logger.info(f"Loading cached dataset from {complete_dataset_path}")
             complete = cached_dataset
@@ -163,12 +163,9 @@ def main():
                 out_path_panel=feature_panel_path,
                 out_path_cols=feature_cols_path,
                 descriptives_path=descriptives_path,
-                cols_chara=data_cfg.chara_cols,
-                cols_macro=data_cfg.marco_cols,
-                sic2_column=data_cfg.sic2_column,
-                n_quantiles=repro_cfg.scalar_n_quantiles,
                 random_state=random_state,
                 regime_config=regime_cfg,
+                data_config=data_cfg,
                 save_feature_panel=cache_cfg.save_feature_panel,
             )
     else:
@@ -178,12 +175,9 @@ def main():
             out_path_panel=feature_panel_path,
             out_path_cols=feature_cols_path,
             descriptives_path=descriptives_path,
-            cols_chara=data_cfg.chara_cols,
-            cols_macro=data_cfg.marco_cols,
-            sic2_column=data_cfg.sic2_column,
-            n_quantiles=repro_cfg.scalar_n_quantiles,
             random_state=random_state,
             regime_config=regime_cfg,
+            data_config=data_cfg,
             save_feature_panel=cache_cfg.save_feature_panel,
         )
     

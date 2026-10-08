@@ -84,14 +84,16 @@ class SplitConfig:
 class DataRegimeConfig:
     mode: str = "coding"  # 'full' or 'coding'
     include_macro_interactions: bool = True
-    ols3_size_col: str = "size"
+    ols3_size_col: str = "mvel1"
     ols3_bm_col: str = "bm"
-    ols3_mom_col: str = "mom12"
-    coding_max_stocks: int = 500
+    ols3_mom_col: str = "mom12m"
+    chara_cols_benchmark: List[str] = field(default_factory=lambda: [
+        'mvel1', 'mom12m', 'bm', 
+    ])
+    coding_max_stocks: int = 100
     chara_cols_coding: List[str] = field(default_factory=lambda: [
-        "size", "mom12", "turnover", "dolvol", "ret_1_0", 
-        "prof", "roe", "stdacc", "cash", "saleq_growth", 
-        "bm", "asset_growth", "inv", "op", "ni_at"
+        'mvel1', 'mom12m', 'bm', 
+        'mom1m', 'mom6m', 'dy', 'cash', 'stdacc', 'chmom', 'ep'
     ])
 
 
@@ -99,13 +101,13 @@ class DataRegimeConfig:
 class HyperGridConfig:
     use_extended_grids: bool = False
     rf_base: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [200, 500],
+        "n_estimators_grid": [300],
         "depth_grid": [4, 6, 8],
         "max_features_grid": ["sqrt", 0.3, 0.5],
         "leaf_grid": [25, 50, 100],
     })
     rf_extended: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [200, 500, 1000],
+        "n_estimators_grid": [200, 300, 400],
         "depth_grid": [3, 4, 6, 8, 10, None],
         "max_features_grid": ["sqrt", "log2", 0.2, 0.3, 0.5, 0.8],
         "leaf_grid": [10, 25, 50, 100, 250],

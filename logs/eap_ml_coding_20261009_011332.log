@@ -1,0 +1,27 @@
+2026-10-09 01:13:32 | INFO | eap_ml | Logger initialized.
+2026-10-09 01:13:32 | INFO | eap_ml | Regime mode: coding
+2026-10-09 01:13:32 | INFO | eap_ml | Log file: logs\eap_ml_coding_20261009_011332.log
+2026-10-09 01:13:32 | INFO | eap_ml | Starting experiment run.
+2026-10-09 01:13:32 | INFO | eap_ml | Random seed: 42
+2026-10-09 01:13:32 | INFO | eap_ml | Cache dir: cache
+2026-10-09 01:13:32 | INFO | eap_ml | Data regime: coding
+2026-10-09 01:13:32 | INFO | eap_ml | Model selection: Running custom subset: ['OLS_3']
+2026-10-09 01:13:32 | INFO | eap_ml | Building complete dataset.
+2026-10-09 01:13:41 | INFO | eap_ml | Feature panel and cols found in cashe. Skipping building/loading dataset.
+2026-10-09 01:13:42 | INFO | eap_ml | Loading cached feature panel from cache/feature_panel_coding.parquet
+2026-10-09 01:13:42 | INFO | eap_ml | Feature panel shape: (11569, 183)
+2026-10-09 01:13:42 | INFO | eap_ml | Number of feature columns: 10
+2026-10-09 01:13:42 | INFO | eap_ml | Starting expanding window forecasting.
+2026-10-09 01:13:42 | INFO | eap_ml | Running unified expanding window (1987-2021) with evaluation at 2016 and 2021
+2026-10-09 01:14:31 | INFO | eap_ml.expanding_window | Starting expanding window forecasting: unified
+2026-10-09 01:14:31 | INFO | eap_ml.expanding_window | Generated 35 yearly splits for expanding window
+2026-10-09 01:14:31 | INFO | eap_ml.expanding_window | Year 1987: Training on 1957-03-01 00:00:00 to 1974-12-31, validating on 1975-01-01 00:00:00 to 1986-12-31, forecasting 1987
+2026-10-09 01:15:20 | INFO | eap_ml.expanding_window | Year 1987: Training models on 1075 samples
+2026-10-09 01:15:20 | DEBUG | eap_ml.expanding_window | Training OLS_3 (Huber) with features: ['mvel1', 'mom12m', 'bm']
+2026-10-09 01:15:20 | DEBUG | eap_ml.models_linear | Fitting pooled Huber 3-factor model: shape=(1075, 3)
+2026-10-09 01:15:20 | DEBUG | eap_ml.models_linear | Fitting Huber regression: epsilon=1.35, alpha=0.0001, shape=(1075, 3)
+2026-10-09 01:15:20 | DEBUG | eap_ml.models_linear | Huber regression fitting completed
+2026-10-09 01:15:20 | INFO | eap_ml.expanding_window | Year 1987: Trained 1 models: ['OLS_3']
+2026-10-09 01:15:54 | INFO | eap_ml.expanding_window | Year 1987: Generating predictions for 164 samples
+2026-10-09 01:17:51 | INFO | eap_ml.expanding_window | Year 1987: Generated 164 predictions
+2026-10-09 01:17:51 | DEBUG | eap_ml.expanding_window | Saved predictions to output\unified\predictions_year_1987.parquet

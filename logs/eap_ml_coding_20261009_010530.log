@@ -1,0 +1,15 @@
+2026-10-09 01:05:30 | INFO | eap_ml | Logger initialized.
+2026-10-09 01:05:30 | INFO | eap_ml | Regime mode: coding
+2026-10-09 01:05:30 | INFO | eap_ml | Log file: logs\eap_ml_coding_20261009_010530.log
+2026-10-09 01:05:30 | INFO | eap_ml | Starting experiment run.
+2026-10-09 01:05:30 | INFO | eap_ml | Random seed: 42
+2026-10-09 01:05:30 | INFO | eap_ml | Cache dir: cache
+2026-10-09 01:05:30 | INFO | eap_ml | Data regime: coding
+2026-10-09 01:05:30 | INFO | eap_ml | Model selection: Running custom subset: ['OLS_3']
+2026-10-09 01:05:30 | INFO | eap_ml | Building complete dataset.
+2026-10-09 01:05:43 | INFO | eap_ml | Feature panel and cols found in cashe. Skipping building/loading dataset.
+2026-10-09 01:05:44 | INFO | eap_ml | Loading cached feature panel from cache/feature_panel_coding.parquet
+2026-10-09 01:05:44 | INFO | eap_ml | Feature panel shape: (11569, 183)
+2026-10-09 01:05:44 | INFO | eap_ml | Number of feature columns: 10
+2026-10-09 01:05:44 | INFO | eap_ml | Starting expanding window forecasting.
+2026-10-09 01:05:44 | INFO | eap_ml | Running unified expanding window (1987-2021) with evaluation at 2016 and 2021

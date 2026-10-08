@@ -71,16 +71,20 @@ def build_feature_panel(
     out_path_panel: str,
     out_path_cols: str,
     descriptives_path: str,
-    cols_chara: list[str],
-    cols_macro: list[str],
-    sic2_column: str,
-    n_quantiles: int,
     random_state: int,
     regime_config,
+    data_config,
     save_feature_panel: bool,
 ):
     logger.info(f"Building feature panel, mode={regime_config.mode}, interactions={regime_config.include_macro_interactions}")
 
+    cols_chara = data_config.chara_cols
+    cols_macro = data_config.marco_cols 
+    sic2_column = data_config.sic2_column
+
+
+    data_start_date = f"1957-03-01"
+    df = df[(df["date"] >= data_start_date)].copy()
 
     # ------------------------------------------------------------------
     # 1. Create industry dummies 

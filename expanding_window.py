@@ -124,7 +124,7 @@ def train_models_for_year(
         run_all = False
     
     # Benchmark: OLS-3 with 3 factors (Gu et al. 2020 use Huber, not LinearRegression)
-    benchmark_features = [c for c in [regime_config.ols3_size_col, regime_config.ols3_bm_col, regime_config.ols3_mom_col] if c in X_train_s.columns]
+    benchmark_features = [c for c in regime_config.chara_cols_benchmark if c in X_train_s.columns]
     if len(benchmark_features) == 3:
         if run_all or "OLS_3" in (models_to_run or []):
             logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
@@ -183,12 +183,18 @@ def generate_predictions(
     models: Dict[str, Any],
     test_df: pd.DataFrame,
     feature_cols: list[str],
+    regime_config: DataRegimeConfig,
     year: int,
 ) -> pd.DataFrame:
     """
     Generate predictions for all models on test data.
     """
     logger.info(f"Year {year}: Generating predictions for {len(test_df)} samples")
+
+    benchmark_features = regime_config.chara_cols_benchmark
+    if len(benchmark_features) == 3:
+        if "OLS_3" in (models or []):
+            X_test_OLS_3 = test_df[benchmark_features].fillna(0.0)
     
     X_test = test_df[feature_cols].fillna(0.0)
     y_test = test_df["excess_ret_total"]
@@ -196,7 +202,10 @@ def generate_predictions(
     predictions = []
     
     for model_name, model in models.items():
-        pred = model.predict(X_test).ravel()
+        if model_name == "OLS_3":
+            pred = model.predict(X_test_OLS_3).ravel()
+        else:
+            pred = model.predict(X_test).ravel()
         
         # Create DataFrame with predictions
         pred_df = test_df[["permno", "date", "excess_ret_total"]].copy()
@@ -278,7 +287,7 @@ def run_expanding_window(
         )
         
         # Generate predictions
-        predictions = generate_predictions(models, test_df, feature_cols, year)
+        predictions = generate_predictions(models, test_df, feature_cols, regime_config, year)
         all_predictions.append(predictions)
         
         # Save predictions for this year
