@@ -44,7 +44,7 @@ class DataFilesConfig:
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
         "permno",
         "date", "yyyymm",
-        "ret", "dlret"
+        "ret", "dlret", "prc", "shrout"
     ])
     possible_marco_cols: List[str] = field(default_factory=lambda: [
         "date", "yyyymm", 

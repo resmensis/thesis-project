@@ -126,7 +126,7 @@ def load_crsp_monthly(
     df = df.rename(columns={date_col: "date"})
     logger.debug("Standardizing date of CRSP")
     df = standardize_to_monthly(df, date_col="date")
-    for col in ["permno", "ret", "dlret"]:
+    for col in ["permno", "ret", "dlret", "prc", "shrout"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     logger.debug(f"CRSP loaded: {len(df)} rows")

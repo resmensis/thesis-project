@@ -392,6 +392,13 @@ def build_complete_dataset(
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
 
     # ------------------------------------------------------------------
+    # cut 1957-03
+    # ------------------------------------------------------------------    
+    
+    data_start_date = f"1957-03-01"
+    merged = merged[(merged["date"] >= data_start_date)].copy()
+    
+    # ------------------------------------------------------------------
     # excess_ret_total
     # ------------------------------------------------------------------
     logger.debug("Creating excess_ret_total")

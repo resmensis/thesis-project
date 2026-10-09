@@ -83,9 +83,6 @@ def build_feature_panel(
     sic2_column = data_config.sic2_column
 
 
-    data_start_date = f"1957-03-01"
-    df = df[(df["date"] >= data_start_date)].copy()
-
     # ------------------------------------------------------------------
     # 1. Create industry dummies 
     # ------------------------------------------------------------------
