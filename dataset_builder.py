@@ -379,7 +379,7 @@ def build_complete_dataset(
 
     logger.debug("Merging datashare with CRSP")
     merged = ds.merge(
-        crsp[["permno", "date", "ret", "dlret"]],
+        crsp[["permno", "date", "ret", "dlret", "prc", "shrout"]],
         on=["permno", "date"],
         how="inner",
         # validate="one_to_one",
@@ -411,6 +411,14 @@ def build_complete_dataset(
         - 1.0 - merged["rf"]
     ).where(has_return_data)    
 
+    # ------------------------------------------------------------------
+    # market value
+    # ------------------------------------------------------------------
+
+    merged["mv"] = (
+        merged["prc"].fillna(0.0)
+        * merged["shrout"].fillna(0.0)
+    )
 
     summary_stats_extended(
         merged,

@@ -11,13 +11,13 @@ class ReproducibilityConfig:
 @dataclass
 class RunControlConfig:
     dataset_creation_only: bool = False  # If True, stop after building complete_dataset
-    feature_panel_only: bool = False  # If True, stop after building feature_panel
+    feature_panel_only: bool = True  # If True, stop after building feature_panel
 
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    force_rebuild_dataset: bool = False  # If True, rebuild complete_dataset even if cached
-    force_rebuild_feature_set: bool = False  # If True, rebuild build_feature_panel even if cached
+    force_rebuild_dataset: bool = True  # If True, rebuild complete_dataset even if cached
+    force_rebuild_feature_set: bool = True  # If True, rebuild build_feature_panel even if cached
     force_refit_models: bool = False  # If True, rerun predictions even if cached
     save_complete_dataset: bool = True
     save_feature_panel: bool = True
@@ -38,7 +38,7 @@ class TimeframeConfig:
 @dataclass
 class DataFilesConfig:
     datashare_path: str = "C:/Coding/Project/data/datashare.csv"
-    crsp_monthly_path: str = "C:/Coding/Project/data/crsp_monthly.csv"
+    crsp_monthly_path: str = "C:/Coding/Project/data/crsp_monthly_new.csv"
     macro_path: str = "C:/Coding/Project/data/Data2024_monthly_goyal.csv"
     sic2_column: str = "sic2"  # Column name for industry codes in datashare.csv
     possible_crsp_cols: List[str] = field(default_factory=lambda: [
@@ -95,6 +95,8 @@ class DataRegimeConfig:
         'mvel1', 'mom12m', 'bm', 
         'mom1m', 'mom6m', 'dy', 'cash', 'stdacc', 'chmom', 'ep'
     ])
+    top_bottom: int = 1000
+    top_bottom_coding: int = 25
 
 
 @dataclass
