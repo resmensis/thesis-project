@@ -346,7 +346,14 @@ def run_expanding_window(
     outdir = Path(output_dir) / window_name
     ensure_dir(outdir)
 
-    all_predictions = []
+    all_predictions_path = outdir / "all_predictions.parquet"
+
+    # Initialize or load the cumulative wide prediction store.
+    first_test_df = yearly_splits[0]["test_df"]
+    prediction_store = load_or_initialize_prediction_store(
+        prediction_path=all_predictions_path,
+        test_df=first_test_df,
+    )
 
     for split in yearly_splits:
         year = split["year"]
@@ -373,7 +380,11 @@ def run_expanding_window(
             models_to_run=models_to_run,
         )
 
-        predictions = generate_predictions(
+        if not models:
+            logger.warning(f"Year {year}: no models were trained; skipping.")
+            continue
+
+        yearly_predictions = generate_predictions(
             models=models,
             test_df=test_df,
             feature_cols=feature_cols,
@@ -381,26 +392,60 @@ def run_expanding_window(
             year=year,
         )
 
-        all_predictions.append(predictions)
+        # Add this year's stock-months to the cumulative store if needed.
+        prediction_store = pd.concat(
+            [
+                prediction_store,
+                yearly_predictions[
+                    ["permno", "date", "excess_ret_total", "mv", "year"]
+                ],
+            ],
+            ignore_index=True,
+        ).drop_duplicates(
+            subset=["permno", "date"],
+            keep="last",
+        )
 
-        # pred_path = outdir / f"predictions_year_{year}.parquet"
-        # save_parquet(predictions, pred_path, enabled=cache_config.enabled)
+        # Update only the models trained in this run.
+        for model_name in models:
+            prediction_store = update_prediction_store(
+                store=prediction_store,
+                yearly_predictions=yearly_predictions,
+                model_name=model_name,
+            )
 
-        # models_path = outdir / f"models_year_{year}.pkl"
-        # save_pickle(models, models_path, enabled=cache_config.enabled)
+        # Save the current year's wide predictions.
+        yearly_path = outdir / f"predictions_year_{year}.parquet"
+        save_parquet(
+            yearly_predictions,
+            yearly_path,
+            enabled=cache_config.enabled,
+        )
 
-    if not all_predictions:
-        logger.error("No predictions were generated.")
-        return pd.DataFrame()
+        # Save the fitted models for reproducibility.
+        models_path = outdir / f"models_year_{year}.pkl"
+        save_pickle(
+            models,
+            models_path,
+            enabled=cache_config.enabled,
+        )
 
-    all_predictions_df = pd.concat(all_predictions, ignore_index=True)
+        # Persist the cumulative store after each year.
+        save_parquet(
+            prediction_store,
+            all_predictions_path,
+            enabled=cache_config.enabled,
+        )
 
-    all_pred_path = outdir / "all_predictions.parquet"
-    save_parquet(all_predictions_df, all_pred_path, enabled=cache_config.enabled)
+    completed_models = [
+        column.removeprefix("pred_")
+        for column in prediction_store.columns
+        if column.startswith("pred_")
+    ]
 
     logger.info(
-        f"Expanding window completed: {len(all_predictions_df)} predictions "
-        f"across {all_predictions_df['year'].nunique()} forecast years"
+        f"Expanding window completed. Prediction store shape: "
+        f"{prediction_store.shape}; completed models: {completed_models}"
     )
 
-    return all_predictions_df
+    return prediction_store
