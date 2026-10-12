@@ -12,6 +12,7 @@ from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
 from io_utils import ensure_dir, save_parquet, maybe_load_parquet, save_pickle, maybe_load_pickle
+from evaluation import predictive_r2, compute_sharpe_ratio, aggregate_portfolio_predictions, build_market_timing_strategy
 
 logger = logging.getLogger("eap_ml.expanding_window")
 
@@ -296,7 +297,7 @@ def run_expanding_window(
         logger.debug(f"Saved predictions to {pred_path}")
         
         # Compute metrics for this year
-        from evaluation import predictive_r2, compute_sharpe_ratio, aggregate_portfolio_predictions
+        
         
         year_metrics = []
         for model_name in models.keys():
@@ -314,7 +315,7 @@ def run_expanding_window(
             port_r2 = predictive_r2(port_df["port_true"], port_df["port_pred"])
             
             # Market timing Sharpe
-            from evaluation import build_market_timing_strategy
+            
             timing = build_market_timing_strategy(
                 model_preds[["permno", "date", "me"] if "me" in model_preds.columns else model_preds[["permno", "date"]]],
                 model_preds["actual"],
