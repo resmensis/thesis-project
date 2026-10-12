@@ -203,7 +203,7 @@ def main():
     # Single unified run - evaluates at both original (2016) and extended (2021)
     logger.info("Running unified expanding window (1987-2021) with evaluation at 2016 and 2021")
     
-    predictions, metrics = run_expanding_window(
+    predictions = run_expanding_window(
         feature_panel=feature_panel,
         feature_cols=feature_cols,
         regime_config=regime_cfg,
@@ -214,12 +214,10 @@ def main():
         window_name="unified",  # Single unified window
         output_dir="output",
         models_to_run=models_to_run,  # Determined by ModelSelectionConfig
-        evaluate_at_original=True,  # Save intermediate evaluation at 2016
     )
     
     logger.info("Expanding window completed.")
     logger.info(f"Total predictions: {len(predictions)}")
-    logger.info(f"Metrics by year: {len(metrics)} rows")
     
     # Results are saved to:
     # - output/unified/all_predictions.parquet

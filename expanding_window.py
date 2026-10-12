@@ -233,42 +233,33 @@ def run_expanding_window(
     window_name: str,
     output_dir: str,
     models_to_run: Optional[List[str]] = None,
-    evaluate_at_original: bool = False,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """
-    Run expanding window forecasting with annual refitting.
-    
-    Args:
-        models_to_run: List of model names to run. Use ["OLS_3"] for OLS-3 only.
-        evaluate_at_original: If True, save intermediate evaluation at test_end_year_original.
-    
-    Returns:
-    - all_predictions: DataFrame with all predictions
-    - metrics_by_year: DataFrame with metrics aggregated by year
+    Run expanding-window forecasting with annual refitting.
+
+    The function only generates out-of-sample predictions.
+    Portfolio construction and overall performance evaluation
+    are performed separately after all predictions exist.
     """
     logger.info(f"Starting expanding window forecasting: {window_name}")
-    
-    # Determine test end year - ALWAYS run to extended end for continuity
+
     test_end_year = expand_config.test_end_year_extended
-    
-    # Generate yearly splits
+
     yearly_splits = get_yearly_splits(
-        feature_panel,
-        expand_config,
-        test_end_year,
+        df=feature_panel,
+        config=expand_config,
+        test_end_year=test_end_year,
     )
-    
+
     if len(yearly_splits) == 0:
         logger.error("No valid yearly splits generated. Check data availability.")
-        return pd.DataFrame(), pd.DataFrame()
-    
-    # Prepare output directory
+        return pd.DataFrame()
+
     outdir = Path(output_dir) / window_name
     ensure_dir(outdir)
-    
+
     all_predictions = []
-    metrics_by_year = []
-    
+
     for split in yearly_splits:
         year = split["year"]
         train_df = split["train_df"]
@@ -276,84 +267,52 @@ def run_expanding_window(
         test_df = split["test_df"]
         train_end = split["train_end"]
         val_end = split["val_end"]
-        
-        logger.info(f"Year {year}: Training on {train_df['date'].min()} to {train_end}, "
-                   f"validating on {val_df['date'].min()} to {val_end}, forecasting {year}")
-        
-        # Train models
+
+        logger.info(
+            f"Year {year}: training {train_df['date'].min()} to {train_end}, "
+            f"validating {val_df['date'].min()} to {val_end}, "
+            f"forecasting {year}"
+        )
+
         models = train_models_for_year(
-            train_df, val_df, feature_cols,
-            regime_config, grid_config, repro_config, year,
+            train_df=train_df,
+            val_df=val_df,
+            feature_cols=feature_cols,
+            regime_config=regime_config,
+            grid_config=grid_config,
+            repro_config=repro_config,
+            year=year,
             models_to_run=models_to_run,
         )
-        
-        # Generate predictions
-        predictions = generate_predictions(models, test_df, feature_cols, regime_config, year)
+
+        predictions = generate_predictions(
+            models=models,
+            test_df=test_df,
+            feature_cols=feature_cols,
+            regime_config=regime_config,
+            year=year,
+        )
+
         all_predictions.append(predictions)
-        
-        # Save predictions for this year
+
         pred_path = outdir / f"predictions_year_{year}.parquet"
         save_parquet(predictions, pred_path, enabled=cache_config.enabled)
-        logger.debug(f"Saved predictions to {pred_path}")
-        
-        # Compute metrics for this year
-        
-        
-        year_metrics = []
-        for model_name in models.keys():
-            model_preds = predictions[predictions["model"] == model_name]
-            
-            # Stock-level R2
-            stock_r2 = predictive_r2(model_preds["actual"], model_preds["prediction"])
-            
-            # Portfolio-level R2
-            port_df = aggregate_portfolio_predictions(
-                model_preds[["permno", "date", "me"] if "me" in model_preds.columns else model_preds[["permno", "date"]]],
-                model_preds["actual"],
-                model_preds["prediction"]
-            )
-            port_r2 = predictive_r2(port_df["port_true"], port_df["port_pred"])
-            
-            # Market timing Sharpe
-            
-            timing = build_market_timing_strategy(
-                model_preds[["permno", "date", "me"] if "me" in model_preds.columns else model_preds[["permno", "date"]]],
-                model_preds["actual"],
-                model_preds["prediction"]
-            )
-            timing_sharpe = compute_sharpe_ratio(timing["strategy_ret"])
-            
-            year_metrics.append({
-                "year": year,
-                "model": model_name,
-                "stock_r2": stock_r2,
-                "portfolio_r2": port_r2,
-                "timing_sharpe": timing_sharpe,
-            })
-        
-        metrics_by_year.extend(year_metrics)
-        
-        # Save models for this year (optional)
+
         models_path = outdir / f"models_year_{year}.pkl"
         save_pickle(models, models_path, enabled=cache_config.enabled)
-        logger.debug(f"Saved models to {models_path}")
-        
-        # Save intermediate evaluation at original end year
-        if evaluate_at_original and year == expand_config.test_end_year_original:
-            logger.info(f"Reached original end year {year}, saving intermediate evaluation")
-            metrics_original_path = outdir / "metrics_by_year_original.csv"
-            pd.DataFrame(year_metrics).to_csv(metrics_original_path, index=False)
-    
-    # Concatenate all predictions
+
+    if not all_predictions:
+        logger.error("No predictions were generated.")
+        return pd.DataFrame()
+
     all_predictions_df = pd.concat(all_predictions, ignore_index=True)
-    metrics_by_year_df = pd.DataFrame(metrics_by_year)
-    
-    # Save aggregated results
+
     all_pred_path = outdir / "all_predictions.parquet"
     save_parquet(all_predictions_df, all_pred_path, enabled=cache_config.enabled)
-    
-    metrics_path = outdir / "metrics_by_year.csv"
-    metrics_by_year_df.to_csv(metrics_path, index=False)
-    
-    logger.info(f"Expanding window completed: {len(all_predictions_df)} predictions, {len(metrics_by_year_df)} metric rows")
-    return all_predictions_df, metrics_by_year_df
+
+    logger.info(
+        f"Expanding window completed: {len(all_predictions_df)} predictions "
+        f"across {all_predictions_df['year'].nunique()} forecast years"
+    )
+
+    return all_predictions_df
