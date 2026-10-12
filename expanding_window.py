@@ -180,6 +180,78 @@ def train_models_for_year(
     return models
 
 
+def prediction_column(model_name: str) -> str:
+    """Return the wide-format prediction column for a model."""
+    return f"pred_{model_name}"
+
+
+def load_or_initialize_prediction_store(
+    prediction_path: Path,
+    test_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Load an existing wide prediction store or initialize a new one.
+
+    The store has one row per (permno, date).
+    """
+    existing = maybe_load_parquet(prediction_path, enabled=True)
+
+    if existing is not None:
+        required = ["permno", "date", "excess_ret_total", "mv"]
+        missing = [c for c in required if c not in existing.columns]
+        if missing:
+            raise KeyError(
+                f"Existing prediction store is missing columns: {missing}"
+            )
+
+        duplicates = existing.duplicated(["permno", "date"]).sum()
+        if duplicates > 0:
+            raise ValueError(
+                f"Existing prediction store contains {duplicates} "
+                "duplicate (permno, date) rows."
+            )
+
+        return existing
+
+    return test_df[["permno", "date", "excess_ret_total", "mv"]].copy()
+
+
+def update_prediction_store(
+    store: pd.DataFrame,
+    yearly_predictions: pd.DataFrame,
+    model_name: str,
+) -> pd.DataFrame:
+    """
+    Update one model's prediction column in the wide prediction store.
+
+    Only pred_<model_name> is overwritten. All other prediction columns
+    remain unchanged.
+    """
+    pred_col = prediction_column(model_name)
+    key_cols = ["permno", "date"]
+
+    new_preds = yearly_predictions[key_cols + [pred_col]].copy()
+
+    duplicates = new_preds.duplicated(key_cols).sum()
+    if duplicates > 0:
+        raise ValueError(
+            f"New predictions for {model_name} contain {duplicates} "
+            f"duplicate {key_cols} rows."
+        )
+
+    if pred_col not in store.columns:
+        store[pred_col] = np.nan
+
+    store = store.drop(columns=[pred_col]).merge(
+        new_preds,
+        on=key_cols,
+        how="left",
+        validate="one_to_one",
+    )
+
+    return store
+
+
 def generate_predictions(
     models: Dict[str, Any],
     test_df: pd.DataFrame,
@@ -188,39 +260,55 @@ def generate_predictions(
     year: int,
 ) -> pd.DataFrame:
     """
-    Generate predictions for all models on test data.
+    Generate wide-format predictions.
+
+    Returns one row per stock-month and one prediction column per model:
+    pred_<MODEL_NAME>. The column `mv` is retained for later
+    value-weighted portfolio construction.
     """
     logger.info(f"Year {year}: Generating predictions for {len(test_df)} samples")
 
-    benchmark_features = regime_config.chara_cols_benchmark
-    if len(benchmark_features) == 3:
-        if "OLS_3" in (models or []):
-            X_test_OLS_3 = test_df[benchmark_features].fillna(0.0)
-    
-    X_test = test_df[feature_cols].fillna(0.0)
-    y_test = test_df["excess_ret_total"]
-    
-    predictions = []
-    
-    for model_name, model in models.items():
-        if model_name == "OLS_3":
-            pred = model.predict(X_test_OLS_3).ravel()
-        else:
-            pred = model.predict(X_test).ravel()
-        
-        # Create DataFrame with predictions
-        pred_df = test_df[["permno", "date", "excess_ret_total"]].copy()
-        pred_df["model"] = model_name
-        pred_df["prediction"] = pred
-        pred_df["year"] = year
-        pred_df["actual"] = y_test.values
-        
-        predictions.append(pred_df)
-    
-    result = pd.concat(predictions, ignore_index=True)
-    logger.info(f"Year {year}: Generated {len(result)} predictions")
-    return result
+    required_cols = ["permno", "date", "excess_ret_total", "mv"]
+    missing = [c for c in required_cols if c not in test_df.columns]
+    if missing:
+        raise KeyError(f"test_df is missing required columns: {missing}")
 
+    predictions = test_df[required_cols].copy()
+    predictions["year"] = year
+
+    X_test_full = test_df[feature_cols].fillna(0.0)
+
+    benchmark_features = regime_config.chara_cols_benchmark
+    X_test_benchmark = None
+    if len(benchmark_features) == 3:
+        X_test_benchmark = test_df[benchmark_features].fillna(0.0)
+
+    for model_name, model in models.items():
+        pred_col = f"pred_{model_name}"
+
+        if model_name == "OLS_3":
+            if X_test_benchmark is None:
+                raise ValueError(
+                    "OLS_3 requires exactly three benchmark features, but "
+                    f"regime_config.chara_cols_benchmark has "
+                    f"{len(benchmark_features)} columns."
+                )
+            pred = model.predict(X_test_benchmark).ravel()
+        else:
+            pred = model.predict(X_test_full).ravel()
+
+        if len(pred) != len(predictions):
+            raise ValueError(
+                f"Model {model_name} produced {len(pred)} predictions "
+                f"for {len(predictions)} test observations."
+            )
+
+        predictions[pred_col] = pred
+
+    logger.info(
+        f"Year {year}: Generated predictions for models: {list(models.keys())}"
+    )
+    return predictions
 
 def run_expanding_window(
     feature_panel: pd.DataFrame,
@@ -295,11 +383,11 @@ def run_expanding_window(
 
         all_predictions.append(predictions)
 
-        pred_path = outdir / f"predictions_year_{year}.parquet"
-        save_parquet(predictions, pred_path, enabled=cache_config.enabled)
+        # pred_path = outdir / f"predictions_year_{year}.parquet"
+        # save_parquet(predictions, pred_path, enabled=cache_config.enabled)
 
-        models_path = outdir / f"models_year_{year}.pkl"
-        save_pickle(models, models_path, enabled=cache_config.enabled)
+        # models_path = outdir / f"models_year_{year}.pkl"
+        # save_pickle(models, models_path, enabled=cache_config.enabled)
 
     if not all_predictions:
         logger.error("No predictions were generated.")
