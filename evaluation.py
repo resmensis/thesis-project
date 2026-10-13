@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from itertools import combinations
-from statsmodels.tsa.stattools import diebold_mariano_test
+
 
 from pathlib import Path
 from io_utils import ensure_dir, save_parquet, save_csv
@@ -230,7 +230,6 @@ def compute_diebold_mariano_tests(
     predictions: pd.DataFrame,
     loss: str = "squared_error",
     horizon: int = 1,
-    harvey_adjustment: bool = False,
 ) -> pd.DataFrame:
     """
     Compute Diebold-Mariano tests for every unique pair of models.
@@ -248,9 +247,6 @@ def compute_diebold_mariano_tests(
 
     horizon : int
         Forecast horizon. Use 1 for monthly one-step-ahead forecasts.
-
-    harvey_adjustment : bool
-        Whether to apply the Harvey et al. small-sample correction.
 
     Returns
     -------
@@ -277,7 +273,7 @@ def compute_diebold_mariano_tests(
 
     for model_a_col, model_b_col in combinations(model_cols, 2):
         comparison = predictions[
-            ["permno", "date", model_a_col, model_b_col]
+            ["permno", "date", "excess_ret_total", model_a_col, model_b_col]
         ].dropna()
 
         if comparison.empty:
@@ -287,22 +283,25 @@ def compute_diebold_mariano_tests(
         pred_a = comparison[model_a_col]
         pred_b = comparison[model_b_col]
 
-        result = diebold_mariano_test(
-            y_true,
-            pred_a,
-            pred_b,
-            criterion="mse" if loss == "squared_error" else "mae",
-            power=2 if loss == "squared_error" else 1,
-            harvey_adj=harvey_adjustment,
-            horizon=horizon,
+        if loss == "squared_error":
+            losses_a = (y_true - pred_a) ** 2
+            losses_b = (y_true - pred_b) ** 2
+        else:
+            losses_a = (y_true - pred_a).abs()
+            losses_b = (y_true - pred_b).abs()
+
+        dm_result = diebold_mariano_test(
+            losses_a.to_numpy(),
+            losses_b.to_numpy(),
+            h=horizon,
         )
 
         rows.append({
             "model_a": model_a_col.removeprefix("pred_"),
             "model_b": model_b_col.removeprefix("pred_"),
             "loss": loss,
-            "dm_statistic": result.statistic,
-            "p_value": result.pvalue,
+            "dm_statistic": dm_result["dm"],
+            "p_value": dm_result["p_value"],
             "n_obs": len(comparison),
         })
 
@@ -495,7 +494,6 @@ def evaluate_predictions(
     n_quantiles: int = 10,
     dm_loss: str = "squared_error",
     horizon: int = 1,
-    harvey_adjustment: bool = False,
     save_outputs: bool = True,
 ) -> dict:
     """
@@ -567,7 +565,6 @@ def evaluate_predictions(
         predictions=predictions,
         loss=dm_loss,
         horizon=horizon,
-        harvey_adjustment=harvey_adjustment,
     )
     out_path_dm_tests = f"{output_dir}/{regime_config.mode}/dm_tests.csv"
     save_csv(dm_tests,out_path_dm_tests,enabled=save_outputs)

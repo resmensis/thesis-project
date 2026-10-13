@@ -7,7 +7,6 @@ from config import (
     TimeframeConfig,
     DataFilesConfig,
     RunControlConfig,
-    SplitConfig,
     DataRegimeConfig,
     HyperGridConfig,
     ReproducibilityConfig,
@@ -30,7 +29,6 @@ def main():
     tf_cfg = TimeframeConfig()
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig()
-    split_cfg = SplitConfig()
     regime_cfg = DataRegimeConfig(mode="coding")
     grid_cfg = HyperGridConfig(use_extended_grids=False)
     freq_cfg = CharacteristicsFrequency()
@@ -83,6 +81,8 @@ def main():
 
     feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
     feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
+
+    predictions_path = f"output/{regime_cfg.mode}/all_predictions.parquet"
 
 
     if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
@@ -229,7 +229,6 @@ def main():
         n_quantiles=10,
         dm_loss="squared_error",
         horizon=1,
-        harvey_adjustment=False,
         save_outputs=True,
     )
 

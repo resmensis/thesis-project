@@ -75,11 +75,6 @@ class DataFilesConfig:
     ])
 
 
-@dataclass
-class SplitConfig:
-    train_end: str = "1986-12-31"
-    val_end: str = "2003-12-31"
-
 
 @dataclass
 class DataRegimeConfig:
