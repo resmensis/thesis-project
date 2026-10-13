@@ -21,6 +21,7 @@ from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_lo
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from expanding_window import run_expanding_window
+from evaluation import evaluate_predictions
 
 
 def main():
@@ -219,6 +220,20 @@ def main():
     # - output/unified/all_predictions.parquet
     # - output/unified/metrics_by_year.csv (full 1987-2021)
     # - output/unified/metrics_by_year_original.csv (1987-2016 only)
+
+
+    evaluation = evaluate_predictions(
+        predictions=predictions,
+        regime_config=regime_cfg,
+        output_dir="output",
+        n_quantiles=10,
+        dm_loss="squared_error",
+        horizon=1,
+        harvey_adjustment=False,
+        save_outputs=True,
+    )
+
+
 
 
 if __name__ == "__main__":

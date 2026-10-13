@@ -27,7 +27,7 @@ This project implements an expanding window forecasting framework for asset pric
 
 ```bash
 # Core dependencies
-pip install pandas numpy scikit-learn matplotlib torch
+pip install pandas numpy scikit-learn matplotlib torch scipy
 
 # Parquet support (REQUIRED)
 pip install pyarrow
@@ -44,7 +44,6 @@ thesis-project/
 ├── data_inputs.py         # Data loading functions
 ├── dataset_builder.py     # Dataset construction and imputation
 ├── features.py            # Feature engineering and scaling
-├── sample_splits.py       # Time-based data splitting
 ├── models_linear.py       # Linear models (HuberRegressor, PCR, PLS)
 ├── models_trees.py        # Tree models (GBRT, Random Forest)
 ├── models_mlp.py          # Neural networks (MLP)

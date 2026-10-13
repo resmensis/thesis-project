@@ -41,6 +41,13 @@ def save_pickle(obj, path, enabled=True):
             pickle.dump(obj, f)
 
 
+def save_csv(df, path, enabled=True):
+    if enabled:
+        ensure_dir(Path(path).parent)
+        df.to_csv(path, index=False)
+
+
+
 def set_global_seed(random_state: int = 42, torch_deterministic: bool = True):
     random.seed(random_state)
     np.random.seed(random_state)
