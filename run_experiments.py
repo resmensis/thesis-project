@@ -19,11 +19,7 @@ from config import (
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
 from dataset_builder import build_complete_dataset
-from sample_splits import subset_timeframe, chronological_split
 from features import build_feature_panel
-from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
-from models_trees import tune_gbrt, tune_random_forest
-from models_mlp import tune_mlp_models
 from expanding_window import run_expanding_window
 
 
@@ -40,7 +36,7 @@ def main():
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
     model_cfg = ModelSelectionConfig(run_all_models = False,
-           models_to_run = ["OLS_3"])
+           models_to_run = ["OLS_3", "OLS_full", "RandomForest"])
 
     # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)
@@ -211,7 +207,7 @@ def main():
         repro_config=repro_cfg,
         cache_config=cache_cfg,
         expand_config=expand_cfg,
-        window_name="unified",  # Single unified window
+        window_name=regime_cfg.mode,
         output_dir="output",
         models_to_run=models_to_run,  # Determined by ModelSelectionConfig
     )

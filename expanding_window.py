@@ -7,7 +7,7 @@ from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
 from sample_splits import subset_timeframe
-from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_huber_regression, tune_pcr, tune_pls
+from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_pcr, tune_pls
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
@@ -131,38 +131,40 @@ def train_models_for_year(
             logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
             models["OLS_3"] = fit_pooled_huber_3(X_train_s[benchmark_features], y_train)
     
-    if run_all:
+    if run_all or "OLS_full" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
         logger.debug("Training OLS_full (Huber) with all features")
         models["OLS_full"] = fit_pooled_huber_full(X_train_s, y_train)
-        
-        # Huber regression (same as OLS_full, kept for clarity)
-        logger.debug("Training Huber regression")
-        models["Huber"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
-        
+
+    if run_all or "PCR" in (models_to_run or []):
         # PCR: PCA + HuberRegressor
         logger.debug("Training PCR")
         models["PCR"] = tune_pcr(X_train_s, y_train, X_val_s, y_val)["model"]
-        
+
+    if run_all or "PLS" in (models_to_run or []):
         # PLS: PLSRegression
         logger.debug("Training PLS")
         models["PLS"] = tune_pls(X_train_s, y_train, X_val_s, y_val)["model"]
-        
-        # Tree models
+
+    if run_all or "RandomForest" in (models_to_run or []):
+        # Random Forest
         rf_grid = grid_config.rf_extended if grid_config.use_extended_grids else grid_config.rf_base
-        gbrt_grid = grid_config.gbrt_extended if grid_config.use_extended_grids else grid_config.gbrt_base
-        mlp_grid = grid_config.mlp_extended if grid_config.use_extended_grids else grid_config.mlp_base
-        lstm_grid = grid_config.lstm_extended if grid_config.use_extended_grids else grid_config.lstm_base
-        
-        logger.debug("Training GBRT")
-        models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
-        
         logger.debug("Training Random Forest")
         models["RandomForest"] = tune_random_forest(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **rf_grid)["model"]
-        
+
+    if run_all or "GBRT" in (models_to_run or []):
+        # GBRT
+        gbrt_grid = grid_config.gbrt_extended if grid_config.use_extended_grids else grid_config.gbrt_base
+        logger.debug("Training GBRT")
+        models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
+
+    if run_all or "MLP" in (models_to_run or []):
+        mlp_grid = grid_config.mlp_extended if grid_config.use_extended_grids else grid_config.mlp_base
         logger.debug("Training MLP")
         models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_config.random_state, **mlp_grid)["model"]
-        
+
+    if run_all or "OLS_3" in (models_to_run or []):
+        lstm_grid = grid_config.lstm_extended if grid_config.use_extended_grids else grid_config.lstm_base
         # LSTM: Only when running all models (computationally expensive)
         logger.debug("Training LSTM")
         try:
@@ -174,15 +176,11 @@ def train_models_for_year(
                 random_state=repro_config.random_state
             )["model"]
         except Exception as e:
-            logger.warning(f"LSTM training failed: {e}. Skipping LSTM for year {year}.")
-    
+            logger.warning(f"LSTM training failed: {e}. Skipping LSTM for year {year}.")  
+        
+        
     logger.info(f"Year {year}: Trained {len(models)} models: {list(models.keys())}")
     return models
-
-
-def prediction_column(model_name: str) -> str:
-    """Return the wide-format prediction column for a model."""
-    return f"pred_{model_name}"
 
 
 def load_or_initialize_prediction_store(
@@ -224,10 +222,10 @@ def update_prediction_store(
     """
     Update one model's prediction column in the wide prediction store.
 
-    Only pred_<model_name> is overwritten. All other prediction columns
-    remain unchanged.
+    Only rows whose (permno, date) keys appear in yearly_predictions are
+    overwritten. Predictions for all other years remain unchanged.
     """
-    pred_col = prediction_column(model_name)
+    pred_col = f"pred_{model_name}"
     key_cols = ["permno", "date"]
 
     new_preds = yearly_predictions[key_cols + [pred_col]].copy()
@@ -242,12 +240,19 @@ def update_prediction_store(
     if pred_col not in store.columns:
         store[pred_col] = np.nan
 
-    store = store.drop(columns=[pred_col]).merge(
-        new_preds,
+    new_col = f"{pred_col}__new"
+
+    store = store.merge(
+        new_preds.rename(columns={pred_col: new_col}),
         on=key_cols,
         how="left",
         validate="one_to_one",
     )
+
+    # Overwrite only where a new prediction exists.
+    # For all other stock-months, retain the existing prediction.
+    store[pred_col] = store[new_col].combine_first(store[pred_col])
+    store = store.drop(columns=[new_col])
 
     return store
 
@@ -415,7 +420,7 @@ def run_expanding_window(
             )
 
         # Save the current year's wide predictions.
-        yearly_path = outdir / f"predictions_year_{year}.parquet"
+        yearly_path = outdir / f"predictions/predictions_year_{year}.parquet"
         save_parquet(
             yearly_predictions,
             yearly_path,
@@ -423,7 +428,7 @@ def run_expanding_window(
         )
 
         # Save the fitted models for reproducibility.
-        models_path = outdir / f"models_year_{year}.pkl"
+        models_path = outdir / f"models/models_year_{year}.pkl"
         save_pickle(
             models,
             models_path,

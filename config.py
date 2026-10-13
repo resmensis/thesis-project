@@ -12,6 +12,7 @@ class ReproducibilityConfig:
 class RunControlConfig:
     dataset_creation_only: bool = False  # If True, stop after building complete_dataset
     feature_panel_only: bool = False  # If True, stop after building feature_panel
+    load_predictions: bool = False
 
 @dataclass
 class CacheConfig:
@@ -104,21 +105,20 @@ class HyperGridConfig:
     use_extended_grids: bool = False
     rf_base: Dict = field(default_factory=lambda: {
         "n_estimators_grid": [300],
-        "depth_grid": [4, 6, 8],
-        "max_features_grid": ["sqrt", 0.3, 0.5],
-        "leaf_grid": [25, 50, 100],
+        "depth_grid": [1, 2, 3, 4, 5, 6],
+        "max_features_grid": [3, 5, 10, 20, 30, 50],        
     })
     rf_extended: Dict = field(default_factory=lambda: {
         "n_estimators_grid": [200, 300, 400],
-        "depth_grid": [3, 4, 6, 8, 10, None],
-        "max_features_grid": ["sqrt", "log2", 0.2, 0.3, 0.5, 0.8],
+        "depth_grid": [1, 2, 3, 4, 5, 6],
+        "max_features_grid": ["sqrt", "log2", 3, 5, 10, 20, 30, 50],
         "leaf_grid": [10, 25, 50, 100, 250],
     })
     gbrt_base: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [100, 200, 500],
-        "learning_rate_grid": [0.01, 0.05, 0.1],
-        "depth_grid": [1, 2, 3],
-        "leaf_grid": [25, 50, 100],
+        "n_estimators_grid": [100, 200, 500, 1000],
+        "learning_rate_grid": [0.01, 0.1],
+        "depth_grid": [1, 2],
+        
     })
     gbrt_extended: Dict = field(default_factory=lambda: {
         "n_estimators_grid": [100, 200, 500, 1000],
@@ -129,9 +129,9 @@ class HyperGridConfig:
     mlp_base: Dict = field(default_factory=lambda: {
         "depths": [1, 2, 3, 4, 5],
         "widths": [32, 64, 128],
-        "activations": ["relu", "tanh"],
+        "activations": ["relu"],
         "alpha_grid": [1e-5, 1e-4, 1e-3],
-        "learning_rate_grid": [1e-3, 5e-4],
+        "learning_rate_grid": [0.001, 0.01],
         "max_iter": 300,
     })
     mlp_extended: Dict = field(default_factory=lambda: {

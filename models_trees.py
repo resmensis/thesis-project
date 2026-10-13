@@ -38,7 +38,7 @@ def tune_gbrt(X_train, y_train, X_val, y_val, n_estimators_grid=(100,200,500), l
     return best
 
 
-def fit_random_forest(X_train, y_train, n_estimators=500, max_depth=6, max_features="sqrt", min_samples_leaf=100, n_jobs=-1, random_state=42):
+def fit_random_forest(X_train, y_train, n_estimators=500, max_depth=6, max_features=3, min_samples_leaf=100, n_jobs=-1, random_state=42):
     logger.debug(f"Fitting RF: n_estimators={n_estimators}, depth={max_depth}, max_features={max_features}")
     model = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, max_features=max_features, min_samples_leaf=min_samples_leaf, n_jobs=n_jobs, random_state=random_state)
     model.fit(X_train, y_train)
