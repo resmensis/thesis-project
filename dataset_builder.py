@@ -372,6 +372,27 @@ def build_complete_dataset(
     macro = load_macro_monthly(macro_path, possible_marco_cols)
     ds = load_datashare(datashare_path)
 
+    summary_stats_extended(
+            crsp,
+            date_col="date",
+            output_path=descriptives_path,
+            output_name="summary_crsp",
+        )
+
+    summary_stats_extended(
+            macro,
+            date_col="date",
+            output_path=descriptives_path,
+            output_name="summary_macro",
+        )
+
+    summary_stats_extended(
+            ds,
+            date_col="date",
+            output_path=descriptives_path,
+            output_name="summary_ds",
+        )
+
 
     # Columns 3-96 in datashare.csv = 94 characteristics.
     characteristic_cols = cols_chara
@@ -391,6 +412,8 @@ def build_complete_dataset(
 
     merged = merged.sort_values(["permno", "date"]).reset_index(drop=True)
 
+    logger.debug(f"After merge: {len(merged)} rows")
+
     # ------------------------------------------------------------------
     # cut 1957-03
     # ------------------------------------------------------------------    
@@ -404,6 +427,8 @@ def build_complete_dataset(
     logger.debug("Creating excess_ret_total")
 
     has_return_data = (merged["ret"].notna() | merged["dlret"].notna())
+    has_return_data_proportion = has_return_data.mean()
+    logger.debug(f"Portortion of ret/dlret data overlap: {has_return_data_proportion}")
 
     merged["excess_ret_total"] = (
         (1.0 + merged["ret"].fillna(0.0))

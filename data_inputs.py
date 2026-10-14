@@ -108,7 +108,7 @@ def load_datashare(path: str) -> pd.DataFrame:
     df = df.rename(columns={date_col: "date"})
     logger.debug("Standardizing date of datashare")
     df = standardize_to_monthly(df, date_col="date")
-    df["permno"] = pd.to_numeric(df["permno"], errors="coerce").astype("Int64")
+    df["permno"] = pd.to_numeric(df["permno"], errors="coerce")
     logger.debug(f"Datashare loaded: {len(df)} rows, {len(df.columns)} columns")
     return df
 

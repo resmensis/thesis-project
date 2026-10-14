@@ -20,6 +20,13 @@ def predictive_r2(y_true, y_pred):
     num = np.sum((y_true - y_pred) ** 2)
     return 1.0 - num / denom if denom > 0 else np.nan
 
+def gu_pred_r2(y_true, y_pred):
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    denom = np.sum((y_true) ** 2)
+    num = np.sum((y_true - y_pred) ** 2)
+    return 1.0 - num / denom if denom > 0 else np.nan
+
 
 def compute_sharpe_ratio(returns_series):
     r = pd.Series(returns_series).dropna()
@@ -125,7 +132,7 @@ def compute_model_r2_metrics(
             subset=["excess_ret_total", "mv", model_col]
         )
 
-        overall_r2 = predictive_r2(
+        overall_r2 = gu_pred_r2(
             df["excess_ret_total"],
             df[model_col],
         )
@@ -142,12 +149,12 @@ def compute_model_r2_metrics(
         top_df = pd.concat(top_frames, ignore_index=True)
         bottom_df = pd.concat(bottom_frames, ignore_index=True)
 
-        top_r2 = predictive_r2(
+        top_r2 = gu_pred_r2(
             top_df["excess_ret_total"],
             top_df[model_col],
         )
 
-        bottom_r2 = predictive_r2(
+        bottom_r2 = gu_pred_r2(
             bottom_df["excess_ret_total"],
             bottom_df[model_col],
         )
@@ -405,7 +412,7 @@ def build_ml_portfolios(
 
         portfolio_r2_rows.append({
             "model": model_name,
-            "portfolio_r2": predictive_r2(
+            "portfolio_r2": gu_pred_r2(
                 portfolio_prediction_df["port_true"],
                 portfolio_prediction_df["port_pred"],
             ),

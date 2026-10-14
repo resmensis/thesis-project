@@ -24,16 +24,16 @@ from evaluation import evaluate_predictions
 
 def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
-    cache_cfg = CacheConfig()
+    cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig()
-    regime_cfg = DataRegimeConfig(mode="coding")
+    regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=False, ols3_only_mode=True)
     grid_cfg = HyperGridConfig(use_extended_grids=False)
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
     model_cfg = ModelSelectionConfig(run_all_models = False,
-           models_to_run = ["OLS_3", "OLS_full", "RandomForest"])
+           models_to_run = ["OLS_3"]) # , "OLS_full", "RandomForest"
 
     # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)

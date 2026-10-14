@@ -102,6 +102,21 @@ def build_feature_panel(
         interaction_cols = [c for c in out.columns if "__x__" in c]
         feature_cols = cols_chara + interaction_cols + industry_cols
 
+        if regime_config.ols3_only_mode:
+            cols = [
+                'permno',
+                'date',
+                'mv',
+                'excess_ret_total',
+                'mvel1',
+                'mom12m',
+                'bm',
+            ]
+
+            out = out[cols].copy()
+            feature_cols = regime_config.chara_cols_benchmark
+
+
         summary_stats_extended(
         out,
         date_col="date",

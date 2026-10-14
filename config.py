@@ -71,8 +71,9 @@ class DataFilesConfig:
 
 @dataclass
 class DataRegimeConfig:
-    mode: str = "coding"  # 'full' or 'coding'
+    mode: str = "full"  # 'full' or 'coding'
     include_macro_interactions: bool = True
+    ols3_only_mode: bool = False
     ols3_size_col: str = "mvel1"
     ols3_bm_col: str = "bm"
     ols3_mom_col: str = "mom12m"

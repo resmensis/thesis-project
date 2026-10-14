@@ -4,15 +4,9 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 
+from evaluation import gu_pred_r2
+
 logger = logging.getLogger("eap_ml.models_trees")
-
-
-def predictive_r2(y_true, y_pred):
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-    denom = np.sum((y_true - np.mean(y_true)) ** 2)
-    num = np.sum((y_true - y_pred) ** 2)
-    return 1.0 - num / denom if denom > 0 else np.nan
 
 
 def fit_gbrt(X_train, y_train, n_estimators=200, learning_rate=0.05, max_depth=2, min_samples_leaf=100, random_state=42):
@@ -31,7 +25,7 @@ def tune_gbrt(X_train, y_train, X_val, y_val, n_estimators_grid=(100,200,500), l
             for depth in depth_grid:
                 for leaf in leaf_grid:
                     model = fit_gbrt(X_train, y_train, n_estimators=n_estimators, learning_rate=lr, max_depth=depth, min_samples_leaf=leaf, random_state=random_state)
-                    score = predictive_r2(y_val, model.predict(X_val))
+                    score = gu_pred_r2(y_val, model.predict(X_val))
                     if score > best["val_r2"]:
                         best = {"model": model, "val_r2": score, "params": {"n_estimators": n_estimators, "learning_rate": lr, "max_depth": depth, "min_samples_leaf": leaf}}
     logger.info(f"Best GBRT val R2: {best['val_r2']:.4f}, params: {best['params']}")
@@ -54,7 +48,7 @@ def tune_random_forest(X_train, y_train, X_val, y_val, n_estimators_grid=(200,50
             for max_features in max_features_grid:
                 for leaf in leaf_grid:
                     model = fit_random_forest(X_train, y_train, n_estimators=n_estimators, max_depth=depth, max_features=max_features, min_samples_leaf=leaf, random_state=random_state)
-                    score = predictive_r2(y_val, model.predict(X_val))
+                    score = gu_pred_r2(y_val, model.predict(X_val))
                     if score > best["val_r2"]:
                         best = {"model": model, "val_r2": score, "params": {"n_estimators": n_estimators, "max_depth": depth, "max_features": max_features, "min_samples_leaf": leaf}}
     logger.info(f"Best RF val R2: {best['val_r2']:.4f}, params: {best['params']}")

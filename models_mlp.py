@@ -3,15 +3,9 @@ import logging
 import numpy as np
 from sklearn.neural_network import MLPRegressor
 
+from evaluation import gu_pred_r2
+
 logger = logging.getLogger("eap_ml.models_mlp")
-
-
-def predictive_r2(y_true, y_pred):
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-    denom = np.sum((y_true - np.mean(y_true)) ** 2)
-    num = np.sum((y_true - y_pred) ** 2)
-    return 1.0 - num / denom if denom > 0 else np.nan
 
 
 def fit_mlp_model(X_train, y_train, X_val, y_val, arch_params, random_state=42):
@@ -28,7 +22,7 @@ def fit_mlp_model(X_train, y_train, X_val, y_val, arch_params, random_state=42):
         random_state=random_state,
     )
     model.fit(X_train, y_train)
-    val_r2 = predictive_r2(y_val, model.predict(X_val))
+    val_r2 = gu_pred_r2(y_val, model.predict(X_val))
     logger.debug(f"MLP val R2: {val_r2:.4f}")
     return {"model": model, "val_r2": val_r2, "params": arch_params}
 

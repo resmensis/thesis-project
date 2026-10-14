@@ -6,6 +6,8 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from io_utils import set_global_seed
 
+from evaluation import gu_pred_r2
+
 logger = logging.getLogger("eap_ml.models_lstm")
 
 
