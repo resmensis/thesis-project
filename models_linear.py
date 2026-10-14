@@ -24,7 +24,7 @@ def fit_huber_regression(X_train, y_train, epsilon=1.35, alpha=0.0001):
     return model
 
 
-def fit_pooled_huber_3(X_train, y_train, epsilon=1.35, alpha=0.0001):
+def fit_pooled_huber_3(X_train, y_train, epsilon=2.576, alpha=0.0001):
     """
     Fit pooled Huber regression with 3 factors (size, value, momentum).
     This is Gu et al. (2020) OLS-3 benchmark.
@@ -33,13 +33,29 @@ def fit_pooled_huber_3(X_train, y_train, epsilon=1.35, alpha=0.0001):
     return fit_huber_regression(X_train, y_train, epsilon=epsilon, alpha=alpha)
 
 
-def fit_pooled_huber_full(X_train, y_train, epsilon=1.35, alpha=0.0001):
+def fit_pooled_huber_full(X_train, y_train, epsilon=2.576, alpha=0.0001):
     """
     Fit pooled Huber regression with all features.
     This is Gu et al. (2020) OLS-full model.
     """
     logger.debug(f"Fitting pooled Huber full model: shape={X_train.shape}")
     return fit_huber_regression(X_train, y_train, epsilon=epsilon, alpha=alpha)
+
+
+def tune_huber_regression(X_train, y_train, X_val, y_val, eps_grid=(1.35,1.645,1.96,2.576,3.291), alpha_grid=(1e-5,1e-4,1e-3,1e-2)):
+    """
+    Tune Huber regression hyperparameters.
+    """
+    logger.info(f"Tuning Huber regression on {len(X_train)} samples")
+    best = {"model": None, "val_r2": -np.inf, "params": None}
+    for eps in eps_grid:
+        for alpha in alpha_grid:
+            model = fit_huber_regression(X_train, y_train, epsilon=eps, alpha=alpha)
+            score = gu_pred_r2(y_val, model.predict(X_val))
+            if score > best["val_r2"]:
+                best = {"model": model, "val_r2": score, "params": {"epsilon": eps, "alpha": alpha}}
+    logger.info(f"Best Huber val R2: {best['val_r2']:.4f}, params: {best['params']}")
+    return best
 
 
 class PCRModel:

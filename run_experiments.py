@@ -24,7 +24,7 @@ from evaluation import evaluate_predictions
 
 def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
-    cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
+    cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig()
     regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=False, ols3_only_mode=True)

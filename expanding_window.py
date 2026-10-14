@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
-from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_pcr, tune_pls
+from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_pcr, tune_pls, tune_huber_regression
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
@@ -127,12 +127,14 @@ def train_models_for_year(
     if len(benchmark_features) == 3:
         if run_all or "OLS_3" in (models_to_run or []):
             logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
-            models["OLS_3"] = fit_pooled_huber_3(X_train_s[benchmark_features], y_train)
+            # models["OLS_3"] = fit_pooled_huber_3(X_train_s[benchmark_features], y_train)
+            models["OLS_3"] = tune_huber_regression(X_train_s[benchmark_features], y_train, X_val_s[benchmark_features], y_val)
     
     if run_all or "OLS_full" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
         logger.debug("Training OLS_full (Huber) with all features")
-        models["OLS_full"] = fit_pooled_huber_full(X_train_s, y_train)
+        # models["OLS_full"] = fit_pooled_huber_full(X_train_s, y_train)
+        models["OLS_full"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)
 
     if run_all or "PCR" in (models_to_run or []):
         # PCR: PCA + HuberRegressor
@@ -161,7 +163,7 @@ def train_models_for_year(
         logger.debug("Training MLP")
         models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_config.random_state, **mlp_grid)["model"]
 
-    if run_all or "OLS_3" in (models_to_run or []):
+    if run_all or "LSTM" in (models_to_run or []):
         lstm_grid = grid_config.lstm_extended if grid_config.use_extended_grids else grid_config.lstm_base
         # LSTM: Only when running all models (computationally expensive)
         logger.debug("Training LSTM")

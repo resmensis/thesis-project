@@ -451,13 +451,14 @@ def build_complete_dataset(
         output_path=descriptives_path,
         output_name="summary_loaded",
     )
+    
     # ------------------------------------------------------------------
     # Missingness visualisation and imputation
     # ------------------------------------------------------------------
     cols_chara_and_excess_ret_total = characteristic_cols + ["excess_ret_total"]
 
     # Visualisation before imputation
-    missing_before = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
+    missing_before = compute_missingness_for_characteristics(merged, characteristic_cols)
 
     before_csv = f"{descriptives_path}/charas_missingness_before.csv"
     missing_before.to_csv(before_csv, index=False)
@@ -470,7 +471,7 @@ def build_complete_dataset(
 
     imputer = GroupedMedianImputer(
         group_cols=["date"],
-        value_cols=cols_chara_and_excess_ret_total,
+        value_cols=characteristic_cols,
         fallback="constant",
         fill_value=0.0
     )
@@ -480,7 +481,7 @@ def build_complete_dataset(
 
 
     # Visualisation after imputation
-    missing_after = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
+    missing_after = compute_missingness_for_characteristics(merged, characteristic_cols)
 
     after_csv = f"{descriptives_path}/charas_missingness_after.csv"
     missing_after.to_csv(after_csv, index=False)
@@ -505,6 +506,7 @@ def build_complete_dataset(
         output_name="summary_imputed",
     )
 
+    """
 
     # ------------------------------------------------------------------
     # Temporal shifts 
@@ -563,7 +565,8 @@ def build_complete_dataset(
         output_name="summary_shifted",
     )
 
-
+    """
+    
     # Drop NaN
     merged = merged.dropna(subset=cols_chara_and_excess_ret_total)
 
