@@ -11,7 +11,6 @@ from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
 from io_utils import ensure_dir, save_parquet, maybe_load_parquet, save_pickle, maybe_load_pickle
-from evaluation import predictive_r2, compute_sharpe_ratio, aggregate_portfolio_predictions, build_market_timing_strategy
 
 logger = logging.getLogger("eap_ml.expanding_window")
 

@@ -8,11 +8,13 @@ class ReproducibilityConfig:
     torch_deterministic: bool = True
     scalar_n_quantiles: int = 1000
 
+
 @dataclass
 class RunControlConfig:
     dataset_creation_only: bool = False  # If True, stop after building complete_dataset
     feature_panel_only: bool = False  # If True, stop after building feature_panel
     load_predictions: bool = False
+
 
 @dataclass
 class CacheConfig:
@@ -26,14 +28,6 @@ class CacheConfig:
     save_metrics: bool = True
     cache_dir: str = "cache"
     descriptives_dir: str = "descriptives"
-
-
-@dataclass
-class TimeframeConfig:
-    run_original_window: bool = True
-    run_extended_window: bool = True
-    original_end_date: str = "2016-12-31"
-    extended_end_date: str = "2021-12-31"
 
 
 @dataclass
@@ -75,7 +69,6 @@ class DataFilesConfig:
     ])
 
 
-
 @dataclass
 class DataRegimeConfig:
     mode: str = "coding"  # 'full' or 'coding'
@@ -93,6 +86,7 @@ class DataRegimeConfig:
     ])
     top_bottom: int = 1000
     top_bottom_coding: int = 25
+    test_end_year_original: int = 2016
 
 
 @dataclass

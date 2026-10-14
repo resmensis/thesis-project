@@ -4,7 +4,6 @@ import pandas as pd
 
 from config import (
     CacheConfig,
-    TimeframeConfig,
     DataFilesConfig,
     RunControlConfig,
     DataRegimeConfig,
@@ -21,11 +20,11 @@ from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from expanding_window import run_expanding_window
 from evaluation import evaluate_predictions
+from visualization import  r2_metrics_to_gu_table
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig()
-tf_cfg = TimeframeConfig()
 data_cfg = DataFilesConfig()
 run_ctrl_cfg = RunControlConfig()
 regime_cfg = DataRegimeConfig(mode="coding")
@@ -57,3 +56,4 @@ evaluation = evaluate_predictions(
     horizon=1,
     save_outputs=True,
 )
+

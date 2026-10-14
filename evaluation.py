@@ -539,6 +539,7 @@ def evaluate_predictions(
     )
 
     return {
+        "r2_metrics_original": r2_metrics_original,
         "r2_metrics": r2_metrics,
         "dm_tests": dm_tests,
         "portfolio_returns": portfolio_returns,

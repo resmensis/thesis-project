@@ -4,7 +4,6 @@ import pandas as pd
 
 from config import (
     CacheConfig,
-    TimeframeConfig,
     DataFilesConfig,
     RunControlConfig,
     DataRegimeConfig,
@@ -26,7 +25,6 @@ from evaluation import evaluate_predictions
 def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
     cache_cfg = CacheConfig()
-    tf_cfg = TimeframeConfig()
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig()
     regime_cfg = DataRegimeConfig(mode="coding")
