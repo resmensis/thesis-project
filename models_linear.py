@@ -42,7 +42,7 @@ def fit_pooled_huber_full(X_train, y_train, epsilon=2.576, alpha=0.0001):
     return fit_huber_regression(X_train, y_train, epsilon=epsilon, alpha=alpha)
 
 
-def tune_huber_regression(X_train, y_train, X_val, y_val, eps_grid=(1.35,1.645,1.96,2.576,3.291), alpha_grid=(1e-5,1e-4,1e-3,1e-2)):
+def tune_huber_regression(X_train, y_train, X_val, y_val, eps_grid=(2.576,3.291), alpha_grid=(1e-3,1e-2,1e-1,1e0,1e1,1e2)):
     """
     Tune Huber regression hyperparameters.
     """

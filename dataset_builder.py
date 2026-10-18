@@ -414,12 +414,7 @@ def build_complete_dataset(
 
     logger.debug(f"After merge: {len(merged)} rows")
 
-    # ------------------------------------------------------------------
-    # cut 1957-03
-    # ------------------------------------------------------------------    
-    
-    data_start_date = f"1957-03-01"
-    merged = merged[(merged["date"] >= data_start_date)].copy()
+
     
     # ------------------------------------------------------------------
     # excess_ret_total
@@ -445,12 +440,44 @@ def build_complete_dataset(
         * merged["shrout"].fillna(0.0)
     )
 
+    transformer_1month = GroupedLagShiftTransformer(
+            lag=1,
+            group_col="permno",
+            value_cols="mv",
+            create_new_cols=False,
+            rename_mode="lagged",
+            suffix=None,
+            original_suffix="_original",
+        )
+
+    logger.info("Creating 1-month shift.")
+    merged = transformer_1month.fit_transform(merged)
+    merged = pd.DataFrame(merged)
+    logger.debug("1-month shift created.")
+
+    # ------------------------------------------------------------------
+    # cut 1957-03
+    # ------------------------------------------------------------------    
+    
+    data_start_date = f"1957-03-01"
+    merged = merged[(merged["date"] >= data_start_date)].copy()
+
+
+
     summary_stats_extended(
         merged,
         date_col="date",
         output_path=descriptives_path,
         output_name="summary_loaded",
     )
+
+    # ------------------------------------------------------------------
+    # drop columns
+    # ------------------------------------------------------------------    
+    
+    merged = merged.drop(columns=[
+        "ret", "dlret", "rf", "prc", "shrout"
+        ])
     
     # ------------------------------------------------------------------
     # Missingness visualisation and imputation

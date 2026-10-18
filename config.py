@@ -116,22 +116,29 @@ class HyperGridConfig:
         "depth_grid": [1, 2, 3, 4],
         "leaf_grid": [10, 25, 50, 100],
     })
+
+    mlp_architectures: Dict = field(default_factory=lambda: {
+        "NN1": (32,),
+        "NN2": (32, 16),
+        "NN3": (32, 16, 8),
+        "NN4": (32, 16, 8, 4),
+        "NN5": (32, 16, 8, 4, 2),
+    })
+
     mlp_base: Dict = field(default_factory=lambda: {
-        "depths": [1, 2, 3, 4, 5],
-        "widths": [32, 64, 128],
-        "activations": ["relu"],
+        "activation": "relu",
         "alpha_grid": [1e-5, 1e-4, 1e-3],
         "learning_rate_grid": [0.001, 0.01],
         "max_iter": 300,
     })
+
     mlp_extended: Dict = field(default_factory=lambda: {
-        "depths": [1, 2, 3, 4, 5],
-        "widths": [16, 32, 64, 128, 256],
-        "activations": ["relu", "tanh"],
+        "activation": "relu",
         "alpha_grid": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2],
         "learning_rate_grid": [1e-2, 1e-3, 5e-4, 1e-4],
         "max_iter": 400,
     })
+    
     lstm_base: Dict = field(default_factory=lambda: {
         "seq_len": [6, 12],
         "hidden_dim": [32, 64],

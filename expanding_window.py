@@ -128,13 +128,13 @@ def train_models_for_year(
         if run_all or "OLS_3" in (models_to_run or []):
             logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
             # models["OLS_3"] = fit_pooled_huber_3(X_train_s[benchmark_features], y_train)
-            models["OLS_3"] = tune_huber_regression(X_train_s[benchmark_features], y_train, X_val_s[benchmark_features], y_val)
+            models["OLS_3"] = tune_huber_regression(X_train_s[benchmark_features], y_train, X_val_s[benchmark_features], y_val)["model"]
     
     if run_all or "OLS_full" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
         logger.debug("Training OLS_full (Huber) with all features")
         # models["OLS_full"] = fit_pooled_huber_full(X_train_s, y_train)
-        models["OLS_full"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)
+        models["OLS_full"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
 
     if run_all or "PCR" in (models_to_run or []):
         # PCR: PCA + HuberRegressor
@@ -158,10 +158,42 @@ def train_models_for_year(
         logger.debug("Training GBRT")
         models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
 
-    if run_all or "MLP" in (models_to_run or []):
-        mlp_grid = grid_config.mlp_extended if grid_config.use_extended_grids else grid_config.mlp_base
-        logger.debug("Training MLP")
-        models["MLP"] = tune_mlp_models(X_train_s, y_train, X_val_s, y_val, random_state=repro_config.random_state, **mlp_grid)["model"]
+    requested_models = set(models_to_run or [])
+
+    if run_all or "MLP" in requested_models:
+        selected_architectures = dict(grid_config.mlp_architectures)
+    else:
+        selected_architectures = {
+            name: layers
+            for name, layers in grid_config.mlp_architectures.items()
+            if name in requested_models
+        }
+
+    if selected_architectures:
+        mlp_grid = (
+            grid_config.mlp_extended
+            if grid_config.use_extended_grids
+            else grid_config.mlp_base
+        )
+
+        logger.info(
+            "Year %s: training neural networks %s",
+            year,
+            list(selected_architectures),
+        )
+
+        mlp_results = tune_mlp_models(
+            X_train=X_train_s,
+            y_train=y_train,
+            X_val=X_val_s,
+            y_val=y_val,
+            architectures=selected_architectures,
+            param_grid=mlp_grid,
+            random_state=repro_config.random_state,
+        )
+
+        for model_name, result in mlp_results.items():
+            models[model_name] = result["model"]
 
     if run_all or "LSTM" in (models_to_run or []):
         lstm_grid = grid_config.lstm_extended if grid_config.use_extended_grids else grid_config.lstm_base
