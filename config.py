@@ -93,6 +93,7 @@ class DataRegimeConfig:
 @dataclass
 class HyperGridConfig:
     use_extended_grids: bool = False
+
     huber_base: Dict = field(default_factory=lambda: {
         "epsilon": [2.576, 3.291],
         "alpha": [1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2],
@@ -106,45 +107,43 @@ class HyperGridConfig:
     })
 
     pcr_base: Dict = field(default_factory=lambda: {
-        "n_components": [3, 5, 10, 20, 30, 50, 70, 90, 100],
+        "pca__n_components": [3, 5, 10, 20, 30, 50, 70, 90, 100],
     })
 
     pcr_extended: Dict = field(default_factory=lambda: {
-            "n_components": [3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 90, 100],
-        })
+        "pca__n_components": [3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 90, 100],
+    })
 
     pls_base: Dict = field(default_factory=lambda: {
         "n_components": [1, 2, 3, 4, 6, 8, 10],
     })
 
     pls_extended: Dict = field(default_factory=lambda: {
-            "n_components": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        })
+        "n_components": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    })
 
     rf_base: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [300],
-        "depth_grid": [1, 2, 3, 4, 5, 6],
-        "max_features_grid": [3, 5, 10, 20, 30, 50],        
+        "n_estimators": [300],
+        "max_depth": [1, 2, 3, 4, 5, 6],
+        "max_features": [3, 5, 10, 20, 30, 50],
     })
 
     rf_extended: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [200, 300, 400],
-        "depth_grid": [1, 2, 3, 4, 5, 6],
-        "max_features_grid": ["sqrt", "log2", 3, 5, 10, 20, 30, 50],
-        "leaf_grid": [10, 25, 50, 100, 250],
+        "n_estimators": [200, 300, 400],
+        "max_depth": [1, 2, 3, 4, 5, 6],
+        "max_features": ["sqrt", "log2", 3, 5, 10, 20, 30, 50],
     })
 
     gbrt_base: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [25, 50, 100, 200, 500, 1000],
-        "learning_rate_grid": [0.01, 0.1],
-        "depth_grid": [1, 2],        
+        "n_estimators": [25, 50, 100, 200, 500, 1000],
+        "learning_rate": [0.01, 0.1],
+        "max_depth": [1, 2],
     })
-    
+
     gbrt_extended: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [25, 50, 100, 200, 500, 1000],
-        "learning_rate_grid": [0.005, 0.01, 0.05, 0.1],
-        "depth_grid": [1, 2, 3, 4],
-        "leaf_grid": [10, 25, 50, 100],
+        "n_estimators": [25, 50, 100, 200, 500, 1000],
+        "learning_rate": [0.005, 0.01, 0.05, 0.1],
+        "max_depth": [1, 2, 3, 4],
     })
 
     mlp_architectures: Dict = field(default_factory=lambda: {
@@ -156,17 +155,17 @@ class HyperGridConfig:
     })
 
     mlp_base: Dict = field(default_factory=lambda: {
-        "activation": "relu",
-        "alpha_grid": [1e-5, 1e-4, 1e-3],
-        "learning_rate_grid": [0.001, 0.01],
-        "max_iter": 300,
+        "activation": ["relu"],
+        "alpha": [1e-5, 1e-4, 1e-3],
+        "learning_rate_init": [0.001, 0.01],
+        "max_iter": [300],
     })
 
     mlp_extended: Dict = field(default_factory=lambda: {
-        "activation": "relu",
-        "alpha_grid": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2],
-        "learning_rate_grid": [1e-2, 1e-3, 5e-4, 1e-4],
-        "max_iter": 400,
+        "activation": ["relu"],
+        "alpha": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2],
+        "learning_rate_init": [1e-2, 1e-3, 5e-4, 1e-4],
+        "max_iter": [400],
     })
 
     lstm_base: Dict = field(default_factory=lambda: {

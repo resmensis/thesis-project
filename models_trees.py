@@ -46,14 +46,15 @@ def tune_random_forest(
     splitter = PredefinedSplit(test_fold=test_fold)
 
     grid = GridSearchCV(
-        estimator=RandomForestRegressor(random_state=random_state),
+        estimator=RandomForestRegressor(
+            n_jobs=1,
+            random_state=random_state,
+        ),
         param_grid=param_grid,
         scoring=gu_pred_r2_scorer,
         cv=splitter,
         refit=False,
         n_jobs=-1,
-        return_train_score=False,
-        verbose=0,
     )
 
     grid.fit(X, y)

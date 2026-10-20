@@ -397,17 +397,19 @@ def generate_predictions(
     for model_name, model in models.items():
         pred_col = f"pred_{model_name}"
 
-        if model_name == "OLS_3":
+        benchmark_model_names = {"OLS_3", "OLS_3_old"}
+
+        if model_name in benchmark_model_names:
             if X_test_benchmark is None:
                 raise ValueError(
-                    "OLS_3 requires exactly three benchmark features, but "
+                    "Benchmark models require exactly three benchmark features, but "
                     f"regime_config.chara_cols_benchmark has "
                     f"{len(benchmark_features)} columns."
                 )
             pred = model.predict(X_test_benchmark).ravel()
         else:
             pred = model.predict(X_test_full).ravel()
-
+            
         if len(pred) != len(predictions):
             raise ValueError(
                 f"Model {model_name} produced {len(pred)} predictions "
