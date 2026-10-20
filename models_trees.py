@@ -3,56 +3,144 @@ import logging
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.model_selection import GridSearchCV, PredefinedSplit
+from sklearn.metrics import make_scorer
 
 from evaluation import gu_pred_r2
 
 logger = logging.getLogger("eap_ml.models_trees")
 
 
-def fit_gbrt(X_train, y_train, n_estimators=200, learning_rate=0.05, max_depth=2, min_samples_leaf=100, random_state=42):
-    logger.debug(f"Fitting GBRT: n_estimators={n_estimators}, lr={learning_rate}, depth={max_depth}")
-    model = GradientBoostingRegressor(n_estimators=n_estimators, learning_rate=learning_rate, max_depth=max_depth, min_samples_leaf=min_samples_leaf, random_state=random_state, loss="squared_error")
-    model.fit(X_train, y_train)
-    logger.debug("GBRT fitting completed")
-    return model
+gu_pred_r2_scorer = make_scorer(gu_pred_r2)
 
 
-def tune_gbrt(X_train, y_train, X_val, y_val, n_estimators_grid=(100,200,500), learning_rate_grid=(0.01,0.05,0.1), depth_grid=(1,2,3), leaf_grid=(25,50,100), random_state=42):
-    logger.info("Tuning GBRT")
-    best = {"model": None, "val_r2": -np.inf, "params": None}
-    for n_estimators in n_estimators_grid:
-        for lr in learning_rate_grid:
-            for depth in depth_grid:
-                for leaf in leaf_grid:
-                    model = fit_gbrt(X_train, y_train, n_estimators=n_estimators, learning_rate=lr, max_depth=depth, min_samples_leaf=leaf, random_state=random_state)
-                    score = gu_pred_r2(y_val, model.predict(X_val))
-                    if score > best["val_r2"]:
-                        best = {"model": model, "val_r2": score, "params": {"n_estimators": n_estimators, "learning_rate": lr, "max_depth": depth, "min_samples_leaf": leaf}}
-    logger.info(f"Best GBRT val R2: {best['val_r2']:.4f}, params: {best['params']}")
-    return best
+def tune_random_forest(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    random_state,
+    param_grid: dict,
+):
+    """
+    Tune Random Forest with GridSearchCV.
+
+    Uses a fixed train/validation split, so validation observations are
+    never used for fitting. Selects hyperparameters by Gu et al. (2020)
+    predicted R2 on the validation set.
+    """
 
 
-def fit_random_forest(X_train, y_train, n_estimators=500, max_depth=6, max_features=3, min_samples_leaf=100, n_jobs=-1, random_state=42):
-    logger.debug(f"Fitting RF: n_estimators={n_estimators}, depth={max_depth}, max_features={max_features}")
-    model = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, max_features=max_features, min_samples_leaf=min_samples_leaf, n_jobs=n_jobs, random_state=random_state)
-    model.fit(X_train, y_train)
-    logger.debug("RF fitting completed")
-    return model
+    logger.info(
+        f"Tuning Random Forest on {len(X_train)} train and "
+        f"{len(X_val)} validation samples"
+    )
+
+    X = np.vstack([X_train, X_val])
+    y = np.concatenate([y_train, y_val])
+
+    test_fold = np.concatenate([
+        np.full(len(X_train), -1, dtype=int),
+        np.zeros(len(X_val), dtype=int),
+    ])
+    splitter = PredefinedSplit(test_fold=test_fold)
+
+    grid = GridSearchCV(
+        estimator=RandomForestRegressor(random_state=random_state),
+        param_grid=param_grid,
+        scoring=gu_pred_r2_scorer,
+        cv=splitter,
+        refit=False,
+        n_jobs=-1,
+        return_train_score=False,
+        verbose=0,
+    )
+
+    grid.fit(X, y)
+
+    best_params = grid.best_params_
+
+    # Refit only on the training set, exactly as in the previous implementation.
+    best_model = RandomForestRegressor(random_state=random_state,**best_params)
+    best_model.fit(X_train, y_train)
+
+    best_score = gu_pred_r2(y_val, best_model.predict(X_val))
+
+    logger.info(
+        f"Best Random Forest val R2: {best_score:.4f}, params: {best_params}"
+    )
+
+    return {
+        "model": best_model,
+        "val_r2": best_score,
+        "params": best_params,
+        "cv_results": grid.cv_results_,
+    }
 
 
-def tune_random_forest(X_train, y_train, X_val, y_val, n_estimators_grid=(200,500), depth_grid=(4,6,8,None), max_features_grid=("sqrt","log2",0.3,0.5), leaf_grid=(25,50,100), random_state=42):
-    logger.info("Tuning Random Forest")
-    best = {"model": None, "val_r2": -np.inf, "params": None}
-    for n_estimators in n_estimators_grid:
-        for depth in depth_grid:
-            for max_features in max_features_grid:
-                for leaf in leaf_grid:
-                    model = fit_random_forest(X_train, y_train, n_estimators=n_estimators, max_depth=depth, max_features=max_features, min_samples_leaf=leaf, random_state=random_state)
-                    score = gu_pred_r2(y_val, model.predict(X_val))
-                    if score > best["val_r2"]:
-                        best = {"model": model, "val_r2": score, "params": {"n_estimators": n_estimators, "max_depth": depth, "max_features": max_features, "min_samples_leaf": leaf}}
-    logger.info(f"Best RF val R2: {best['val_r2']:.4f}, params: {best['params']}")
-    return best
+def tune_gbrt(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    random_state,
+    param_grid: dict,
+    
+):
+    """
+    Tune GBRT with GridSearchCV.
+
+    Uses a fixed train/validation split, so validation observations are
+    never used for fitting. Selects hyperparameters by Gu et al. (2020)
+    predicted R2 on the validation set.
+    """
+
+
+    logger.info(
+        f"Tuning GBRT on {len(X_train)} train and "
+        f"{len(X_val)} validation samples"
+    )
+
+    X = np.vstack([X_train, X_val])
+    y = np.concatenate([y_train, y_val])
+
+    test_fold = np.concatenate([
+        np.full(len(X_train), -1, dtype=int),
+        np.zeros(len(X_val), dtype=int),
+    ])
+    splitter = PredefinedSplit(test_fold=test_fold)
+
+    grid = GridSearchCV(
+        estimator=GradientBoostingRegressor(random_state=random_state),
+        param_grid=param_grid,
+        scoring=gu_pred_r2_scorer,
+        cv=splitter,
+        refit=False,
+        n_jobs=-1,
+        return_train_score=False,
+        verbose=0,
+    )
+
+    grid.fit(X, y)
+
+    best_params = grid.best_params_
+
+    # Refit only on the training set, exactly as in the previous implementation.
+    best_model = GradientBoostingRegressor(random_state=random_state,**best_params)
+    best_model.fit(X_train, y_train)
+
+    best_score = gu_pred_r2(y_val, best_model.predict(X_val))
+
+    logger.info(
+        f"Best GBRT val R2: {best_score:.4f}, params: {best_params}"
+    )
+
+    return {
+        "model": best_model,
+        "val_r2": best_score,
+        "params": best_params,
+        "cv_results": grid.cv_results_,
+    }
 
 
 def feature_importance_table(model, feature_names, top_n=25):

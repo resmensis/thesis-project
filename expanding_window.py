@@ -210,7 +210,7 @@ def train_models_for_year(
                         else grid_config.huber_base
                     )
                     logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
-                    models["OLS_3"] = tune_huber_regression(
+                    models["OLS_3_old"] = tune_huber_regression(
                         X_train=X_train_s[benchmark_features],
                         y_train=y_train,
                         X_val=X_val_s[benchmark_features],
@@ -231,29 +231,80 @@ def train_models_for_year(
             else grid_config.huber_base
         )
         logger.debug("Training OLS_full (Huber) with all features")
-        models["OLS_full_old"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
+        models["OLS_full_old"] = tune_huber_regression(
+            X_train=X_train_s,
+            y_train=y_train,
+            X_val=X_val_s,
+            y_val=y_val,
+            param_grid=huber_grid,
+        )["model"]
 
     if run_all or "PCR" in (models_to_run or []):
-        # PCR: PCA + HuberRegressor
+        # PCR: PCA + HuberLinearRegressor
+        pcr_grid = (
+            grid_config.pcr_extended
+            if grid_config.use_extended_grids
+            else grid_config.pcr_base
+        )
         logger.debug("Training PCR")
-        models["PCR"] = tune_pcr(X_train_s, y_train, X_val_s, y_val)["model"]
+        models["PCR"] = tune_pcr(
+            X_train=X_train_s,
+            y_train=y_train,
+            X_val=X_val_s,
+            y_val=y_val,
+            random_state=repro_config.random_state,
+            param_grid=pcr_grid,
+        )["model"]
 
     if run_all or "PLS" in (models_to_run or []):
         # PLS: PLSRegression
+        pls_grid = (
+            grid_config.pls_extended
+            if grid_config.use_extended_grids
+            else grid_config.pls_base
+        )
         logger.debug("Training PLS")
-        models["PLS"] = tune_pls(X_train_s, y_train, X_val_s, y_val)["model"]
+        models["PLS"] = tune_pls(
+            X_train=X_train_s,
+            y_train=y_train,
+            X_val=X_val_s,
+            y_val=y_val,
+            param_grid=pls_grid,
+        )["model"]
 
     if run_all or "RandomForest" in (models_to_run or []):
         # Random Forest
-        rf_grid = grid_config.rf_extended if grid_config.use_extended_grids else grid_config.rf_base
+        rf_grid = (
+            grid_config.rf_extended 
+            if grid_config.use_extended_grids 
+            else grid_config.rf_base
+        )
         logger.debug("Training Random Forest")
-        models["RandomForest"] = tune_random_forest(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **rf_grid)["model"]
+        models["RandomForest"] = tune_random_forest(
+            X_train, 
+            y_train, 
+            X_val, 
+            y_val, 
+            random_state=repro_config.random_state, 
+            param_grid=rf_grid
+        )["model"]
 
     if run_all or "GBRT" in (models_to_run or []):
         # GBRT
-        gbrt_grid = grid_config.gbrt_extended if grid_config.use_extended_grids else grid_config.gbrt_base
+        gbrt_grid = (
+            grid_config.gbrt_extended 
+            if grid_config.use_extended_grids 
+            else grid_config.gbrt_base
+        )
         logger.debug("Training GBRT")
-        models["GBRT"] = tune_gbrt(X_train, y_train, X_val, y_val, random_state=repro_config.random_state, **gbrt_grid)["model"]
+        models["GBRT"] = tune_gbrt(
+            X_train, 
+            y_train, 
+            X_val, 
+            y_val, 
+            random_state=repro_config.random_state, 
+            param_grid=gbrt_grid
+        )["model"]
 
     requested_models = set(models_to_run or [])
 

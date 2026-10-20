@@ -1,54 +1,22 @@
 from __future__ import annotations
 
 import logging
-from itertools import product
-
 import numpy as np
 from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import GridSearchCV, PredefinedSplit
+from sklearn.base import clone
+from sklearn.metrics import make_scorer
 
 from evaluation import gu_pred_r2
+
 
 logger = logging.getLogger("eap_ml.models_mlp")
 
 
-def fit_mlp_model(
-    X_train,
-    y_train,
-    X_val,
-    y_val,
-    arch_params: dict,
-    random_state: int = 42,
-) -> dict:
-    """Fit one MLP configuration and score it on the external validation set."""
-    logger.debug("Fitting MLP: %s", arch_params)
+gu_pred_r2_scorer = make_scorer(gu_pred_r2)
 
-    model = MLPRegressor(
-        hidden_layer_sizes=tuple(arch_params["hidden_layer_sizes"]),
-        activation=arch_params["activation"],
-        alpha=arch_params["alpha"],
-        learning_rate_init=arch_params["learning_rate_init"],
-        max_iter=arch_params["max_iter"],
-        solver="adam",
-        early_stopping=True,
-        validation_fraction=0.1,
-        n_iter_no_change=10,
-        random_state=random_state,
-    )
 
-    model.fit(X_train, np.asarray(y_train).ravel())
 
-    val_r2 = float(
-        gu_pred_r2(
-            np.asarray(y_val).ravel(),
-            model.predict(X_val).ravel(),
-        )
-    )
-
-    return {
-        "model": model,
-        "val_r2": val_r2,
-        "params": dict(arch_params),
-    }
 
 
 def tune_mlp_models(
@@ -59,103 +27,97 @@ def tune_mlp_models(
     architectures: dict,
     param_grid: dict,
     random_state: int = 42,
-) -> dict:
+):
     """
-    Tune each named architecture independently.
+    Tune each MLP architecture independently using GridSearchCV.
+
+    Uses a fixed train/validation split, so validation observations are
+    never used for fitting. Selects hyperparameters by Gu et al. (2020)
+    predicted R2 on the validation set.
 
     Returns:
         {
-            "NN1": {"model": ..., "val_r2": ..., "params": ...},
-            "NN2": {"model": ..., "val_r2": ..., "params": ...},
-            ...
+            "NN1": {
+                "model": ...,
+                "val_r2": ...,
+                "params": ...,
+                "cv_results": ...,
+            },
+            "NN2": {...},
         }
     """
+    logger.info(
+        f"Tuning MLP on {len(X_train)} train and "
+        f"{len(X_val)} validation samples"
+    )
+
     if not architectures:
         raise ValueError("At least one MLP architecture must be supplied.")
 
-    required = {
-        "activation",
-        "alpha_grid",
-        "learning_rate_grid",
-        "max_iter",
-    }
+    X = np.vstack([X_train, X_val])
+    y = np.concatenate([
+        np.asarray(y_train).ravel(),
+        np.asarray(y_val).ravel(),
+    ])
 
-    missing = required.difference(param_grid)
-    if missing:
-        raise KeyError(f"Missing MLP grid settings: {sorted(missing)}")
-
-    alpha_grid = tuple(param_grid["alpha_grid"])
-    learning_rate_grid = tuple(param_grid["learning_rate_grid"])
-
-    if not alpha_grid or not learning_rate_grid:
-        raise ValueError("MLP tuning grids must not be empty.")
+    test_fold = np.concatenate([
+        np.full(len(X_train), -1, dtype=int),
+        np.zeros(len(X_val), dtype=int),
+    ])
+    splitter = PredefinedSplit(test_fold=test_fold)
 
     results = {}
 
     for model_name, hidden_layers in architectures.items():
         hidden_layers = tuple(hidden_layers)
 
-        if not hidden_layers or any(
-            not isinstance(width, (int, np.integer)) or width < 1
-            for width in hidden_layers
-        ):
-            raise ValueError(
-                f"Invalid hidden-layer specification for "
-                f"{model_name}: {hidden_layers}"
-            )
-
-        logger.info(
-            "Tuning %s with hidden layers %s",
-            model_name,
-            hidden_layers,
+        estimator = MLPRegressor(
+            hidden_layer_sizes=hidden_layers,
+            solver="adam",
+            early_stopping=True,
+            validation_fraction=0.1,
+            n_iter_no_change=10,
+            random_state=random_state,
         )
 
-        best = {
-            "model": None,
-            "val_r2": -np.inf,
-            "params": None,
+        grid = GridSearchCV(
+            estimator=estimator,
+            param_grid=param_grid,
+            scoring=gu_pred_r2_scorer,
+            cv=splitter,
+            refit=False,
+            n_jobs=-1,
+            return_train_score=False,
+            verbose=0,
+        )
+
+        grid.fit(X, y)
+
+        best_params = grid.best_params_
+
+        # Create a fresh estimator with the selected hyperparameters.
+        best_model = clone(estimator).set_params(**best_params)
+        best_model.fit(X_train, np.asarray(y_train).ravel())
+
+        best_score = float(
+            gu_pred_r2(
+                np.asarray(y_val).ravel(),
+                best_model.predict(X_val).ravel(),
+            )
+        )
+
+        logger.info(
+            "%s: best MLP validation R2=%.6f; params=%s",
+            model_name,
+            best_score,
+            best_params,
+        )
+
+        results[model_name] = {
+            "model": best_model,
+            "val_r2": best_score,
+            "params": best_params,
+            "cv_results": grid.cv_results_,
         }
-
-        for alpha, learning_rate in product(
-            alpha_grid,
-            learning_rate_grid,
-        ):
-            arch_params = {
-                "hidden_layer_sizes": hidden_layers,
-                "activation": param_grid["activation"],
-                "alpha": alpha,
-                "learning_rate_init": learning_rate,
-                "max_iter": param_grid["max_iter"],
-            }
-
-            result = fit_mlp_model(
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
-                arch_params=arch_params,
-                random_state=random_state,
-            )
-
-            if (
-                np.isfinite(result["val_r2"])
-                and result["val_r2"] > best["val_r2"]
-            ):
-                best = result
-
-        if best["model"] is None:
-            raise RuntimeError(
-                f"No valid configuration found for {model_name}. "
-                "Check validation targets and validation scores."
-            )
-
-        results[model_name] = best
-
-        logger.info(
-            "%s: best validation R2=%.6f; params=%s",
-            model_name,
-            best["val_r2"],
-            best["params"],
-        )
 
     return results

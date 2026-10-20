@@ -105,6 +105,22 @@ class HyperGridConfig:
         "max_iter": [500, 1000],
     })
 
+    pcr_base: Dict = field(default_factory=lambda: {
+        "n_components": [3, 5, 10, 20, 30, 50, 70, 90, 100],
+    })
+
+    pcr_extended: Dict = field(default_factory=lambda: {
+            "n_components": [3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 90, 100],
+        })
+
+    pls_base: Dict = field(default_factory=lambda: {
+        "n_components": [1, 2, 3, 4, 6, 8, 10],
+    })
+
+    pls_extended: Dict = field(default_factory=lambda: {
+            "n_components": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        })
+
     rf_base: Dict = field(default_factory=lambda: {
         "n_estimators_grid": [300],
         "depth_grid": [1, 2, 3, 4, 5, 6],
@@ -119,13 +135,13 @@ class HyperGridConfig:
     })
 
     gbrt_base: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [100, 200, 500, 1000],
+        "n_estimators_grid": [25, 50, 100, 200, 500, 1000],
         "learning_rate_grid": [0.01, 0.1],
         "depth_grid": [1, 2],        
     })
     
     gbrt_extended: Dict = field(default_factory=lambda: {
-        "n_estimators_grid": [100, 200, 500, 1000],
+        "n_estimators_grid": [25, 50, 100, 200, 500, 1000],
         "learning_rate_grid": [0.005, 0.01, 0.05, 0.1],
         "depth_grid": [1, 2, 3, 4],
         "leaf_grid": [10, 25, 50, 100],
