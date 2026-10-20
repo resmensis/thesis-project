@@ -443,7 +443,7 @@ def build_complete_dataset(
     transformer_1month = GroupedLagShiftTransformer(
             lag=1,
             group_col="permno",
-            value_cols="mv",
+            value_cols=["mv"],
             create_new_cols=False,
             rename_mode="lagged",
             suffix=None,
