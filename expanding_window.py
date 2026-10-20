@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
-from models_linear import fit_pooled_huber_3, fit_pooled_huber_full, tune_pcr, tune_pls, tune_huber_regression
+from models_linear import tune_pcr, tune_pls, tune_huber_regression, fit_custom_huber
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
@@ -73,6 +73,80 @@ def get_yearly_splits(
     return splits
 
 
+def load_or_initialize_prediction_store(
+    prediction_path: Path,
+    test_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Load an existing wide prediction store or initialize a new one.
+
+    The store has one row per (permno, date).
+    """
+    existing = maybe_load_parquet(prediction_path, enabled=True)
+
+    if existing is not None:
+        required = ["permno", "date", "excess_ret_total", "mv"]
+        missing = [c for c in required if c not in existing.columns]
+        if missing:
+            raise KeyError(
+                f"Existing prediction store is missing columns: {missing}"
+            )
+
+        duplicates = existing.duplicated(["permno", "date"]).sum()
+        if duplicates > 0:
+            raise ValueError(
+                f"Existing prediction store contains {duplicates} "
+                "duplicate (permno, date) rows."
+            )
+
+        return existing
+
+    return test_df[["permno", "date", "excess_ret_total", "mv"]].copy()
+
+
+def update_prediction_store(
+    store: pd.DataFrame,
+    yearly_predictions: pd.DataFrame,
+    model_name: str,
+) -> pd.DataFrame:
+    """
+    Update one model's prediction column in the wide prediction store.
+
+    Only rows whose (permno, date) keys appear in yearly_predictions are
+    overwritten. Predictions for all other years remain unchanged.
+    """
+    pred_col = f"pred_{model_name}"
+    key_cols = ["permno", "date"]
+
+    new_preds = yearly_predictions[key_cols + [pred_col]].copy()
+
+    duplicates = new_preds.duplicated(key_cols).sum()
+    if duplicates > 0:
+        raise ValueError(
+            f"New predictions for {model_name} contain {duplicates} "
+            f"duplicate {key_cols} rows."
+        )
+
+    if pred_col not in store.columns:
+        store[pred_col] = np.nan
+
+    new_col = f"{pred_col}__new"
+
+    store = store.merge(
+        new_preds.rename(columns={pred_col: new_col}),
+        on=key_cols,
+        how="left",
+        validate="one_to_one",
+    )
+
+    # Overwrite only where a new prediction exists.
+    # For all other stock-months, retain the existing prediction.
+    store[pred_col] = store[new_col].combine_first(store[pred_col])
+    store = store.drop(columns=[new_col])
+
+    return store
+
+
 def train_models_for_year(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
@@ -126,15 +200,38 @@ def train_models_for_year(
     benchmark_features = [c for c in regime_config.chara_cols_benchmark if c in X_train_s.columns]
     if len(benchmark_features) == 3:
         if run_all or "OLS_3" in (models_to_run or []):
-            logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
-            # models["OLS_3"] = fit_pooled_huber_3(X_train_s[benchmark_features], y_train)
-            models["OLS_3"] = tune_huber_regression(X_train_s[benchmark_features], y_train, X_val_s[benchmark_features], y_val)["model"]
+            logger.debug(f"Training OLS_3 (custom Huber) with features: {benchmark_features}")
+            models["OLS_3"] = fit_custom_huber(X_train_s[benchmark_features], y_train)
+
+        if run_all or "OLS_3_old" in (models_to_run or []):
+                    huber_grid = (
+                        grid_config.huber_extended
+                        if grid_config.use_extended_grids
+                        else grid_config.huber_base
+                    )
+                    logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
+                    models["OLS_3"] = tune_huber_regression(
+                        X_train=X_train_s[benchmark_features],
+                        y_train=y_train,
+                        X_val=X_val_s[benchmark_features],
+                        y_val=y_val,
+                        param_grid=huber_grid,
+                    )["model"]
     
     if run_all or "OLS_full" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
+        logger.debug("Training OLS_full (custom Huber) with all features")
+        models["OLS_full"] = fit_custom_huber(X_train_s, y_train)
+
+    if run_all or "OLS_full_old" in (models_to_run or []):
+        # OLS-full: HuberRegressor with all features (Gu et al. 2020)
+        huber_grid = (
+            grid_config.huber_extended
+            if grid_config.use_extended_grids
+            else grid_config.huber_base
+        )
         logger.debug("Training OLS_full (Huber) with all features")
-        # models["OLS_full"] = fit_pooled_huber_full(X_train_s, y_train)
-        models["OLS_full"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
+        models["OLS_full_old"] = tune_huber_regression(X_train_s, y_train, X_val_s, y_val)["model"]
 
     if run_all or "PCR" in (models_to_run or []):
         # PCR: PCA + HuberRegressor
@@ -215,80 +312,6 @@ def train_models_for_year(
     return models
 
 
-def load_or_initialize_prediction_store(
-    prediction_path: Path,
-    test_df: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Load an existing wide prediction store or initialize a new one.
-
-    The store has one row per (permno, date).
-    """
-    existing = maybe_load_parquet(prediction_path, enabled=True)
-
-    if existing is not None:
-        required = ["permno", "date", "excess_ret_total", "mv"]
-        missing = [c for c in required if c not in existing.columns]
-        if missing:
-            raise KeyError(
-                f"Existing prediction store is missing columns: {missing}"
-            )
-
-        duplicates = existing.duplicated(["permno", "date"]).sum()
-        if duplicates > 0:
-            raise ValueError(
-                f"Existing prediction store contains {duplicates} "
-                "duplicate (permno, date) rows."
-            )
-
-        return existing
-
-    return test_df[["permno", "date", "excess_ret_total", "mv"]].copy()
-
-
-def update_prediction_store(
-    store: pd.DataFrame,
-    yearly_predictions: pd.DataFrame,
-    model_name: str,
-) -> pd.DataFrame:
-    """
-    Update one model's prediction column in the wide prediction store.
-
-    Only rows whose (permno, date) keys appear in yearly_predictions are
-    overwritten. Predictions for all other years remain unchanged.
-    """
-    pred_col = f"pred_{model_name}"
-    key_cols = ["permno", "date"]
-
-    new_preds = yearly_predictions[key_cols + [pred_col]].copy()
-
-    duplicates = new_preds.duplicated(key_cols).sum()
-    if duplicates > 0:
-        raise ValueError(
-            f"New predictions for {model_name} contain {duplicates} "
-            f"duplicate {key_cols} rows."
-        )
-
-    if pred_col not in store.columns:
-        store[pred_col] = np.nan
-
-    new_col = f"{pred_col}__new"
-
-    store = store.merge(
-        new_preds.rename(columns={pred_col: new_col}),
-        on=key_cols,
-        how="left",
-        validate="one_to_one",
-    )
-
-    # Overwrite only where a new prediction exists.
-    # For all other stock-months, retain the existing prediction.
-    store[pred_col] = store[new_col].combine_first(store[pred_col])
-    store = store.drop(columns=[new_col])
-
-    return store
-
-
 def generate_predictions(
     models: Dict[str, Any],
     test_df: pd.DataFrame,
@@ -346,6 +369,7 @@ def generate_predictions(
         f"Year {year}: Generated predictions for models: {list(models.keys())}"
     )
     return predictions
+
 
 def run_expanding_window(
     feature_panel: pd.DataFrame,
