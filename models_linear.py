@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import HuberRegressor
+from sklearn.linear_model import HuberRegressor, LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.pipeline import Pipeline
@@ -101,7 +101,7 @@ def tune_huber_regression(
     }
 
 
-def tune_pcr(
+def tune_pcr_huber(
     X_train,
     y_train,
     X_val,
@@ -110,7 +110,7 @@ def tune_pcr(
     param_grid: dict,
 ):
     """
-    Tune PCR with GridSearchCV.
+    Tune PCR with Huber with GridSearchCV.
 
     Uses a fixed train/validation split, so validation observations are
     never used for fitting. Selects hyperparameters by Gu et al. (2020)
@@ -119,7 +119,7 @@ def tune_pcr(
 
 
     logger.info(
-        f"Tuning PCR on {len(X_train)} train and "
+        f"Tuning PCR with Huber on {len(X_train)} train and "
         f"{len(X_val)} validation samples"
     )
 
@@ -159,7 +159,7 @@ def tune_pcr(
     best_score = gu_pred_r2(y_val, best_model.predict(X_val))
 
     logger.info(
-        f"Best PCR val R2: {best_score:.4f}, params: {best_params}"
+        f"Best PCR with Huber val R2: {best_score:.4f}, params: {best_params}"
     )
 
     return {
@@ -223,6 +223,75 @@ def tune_pls(
 
     logger.info(
         f"Best PLS val R2: {best_score:.4f}, params: {best_params}"
+    )
+
+    return {
+        "model": best_model,
+        "val_r2": best_score,
+        "params": best_params,
+        "cv_results": grid.cv_results_,
+    }
+
+
+def tune_pcr_linear(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    random_state,
+    param_grid: dict,
+):
+    """
+    Tune PCR with Linear with GridSearchCV.
+
+    Uses a fixed train/validation split, so validation observations are
+    never used for fitting. Selects hyperparameters by Gu et al. (2020)
+    predicted R2 on the validation set.
+    """
+
+
+    logger.info(
+        f"Tuning PCR with Linear on {len(X_train)} train and "
+        f"{len(X_val)} validation samples"
+    )
+
+    X = np.vstack([X_train, X_val])
+    y = np.concatenate([y_train, y_val])
+
+    test_fold = np.concatenate([
+        np.full(len(X_train), -1, dtype=int),
+        np.zeros(len(X_val), dtype=int),
+    ])
+    splitter = PredefinedSplit(test_fold=test_fold)
+
+    pipeline = Pipeline([
+        ("pca", PCA(random_state=random_state)),
+        ("linear", LinearRegression()),
+    ])
+
+    grid = GridSearchCV(
+        estimator=pipeline,
+        param_grid=param_grid,
+        scoring=gu_pred_r2_scorer,
+        cv=splitter,
+        refit=False,
+        n_jobs=-1,
+        return_train_score=False,
+        verbose=0,
+    )
+
+    grid.fit(X, y)
+
+    best_params = grid.best_params_
+
+    # Refit only on the training set, exactly as in the previous implementation.
+    best_model = pipeline.set_params(**best_params)
+    best_model.fit(X_train, y_train)
+
+    best_score = gu_pred_r2(y_val, best_model.predict(X_val))
+
+    logger.info(
+        f"Best PCR with Linear val R2: {best_score:.4f}, params: {best_params}"
     )
 
     return {

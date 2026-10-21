@@ -65,6 +65,12 @@ def tune_random_forest(
     best_model = RandomForestRegressor(random_state=random_state,**best_params)
     best_model.fit(X_train, y_train)
 
+    feature_importance = pd.Series(
+    best_model.feature_importances_,
+    index=X_train.columns,
+    name="importance",
+)
+
     best_score = gu_pred_r2(y_val, best_model.predict(X_val))
 
     logger.info(
@@ -76,6 +82,7 @@ def tune_random_forest(
         "val_r2": best_score,
         "params": best_params,
         "cv_results": grid.cv_results_,
+        "feature_importance": feature_importance,
     }
 
 
@@ -130,6 +137,12 @@ def tune_gbrt(
     best_model = GradientBoostingRegressor(random_state=random_state,**best_params)
     best_model.fit(X_train, y_train)
 
+    feature_importance = pd.Series(
+        best_model.feature_importances_,
+        index=X_train.columns,
+        name="importance",
+    )
+
     best_score = gu_pred_r2(y_val, best_model.predict(X_val))
 
     logger.info(
@@ -141,6 +154,7 @@ def tune_gbrt(
         "val_r2": best_score,
         "params": best_params,
         "cv_results": grid.cv_results_,
+        "feature_importance": feature_importance,
     }
 
 

@@ -437,6 +437,84 @@ def build_ml_portfolios(
     return portfolio_returns, portfolio_metrics
 
 
+def compute_average_feature_importance(
+    feature_importance_dir: str | Path,
+    models: list[str] = ["RandomForest", "GBRT"],
+    output_dir: str | Path = "output",
+    regime_mode: str = "coding",
+    save_outputs: bool = True,
+) -> dict:
+    """
+    Average feature importance across all yearly refits.
+
+    Parameters
+    ----------
+    feature_importance_dir : directory containing yearly importance CSVs
+    models : model names to aggregate
+    """
+    logger.info("Computing average feature importance.")
+
+    feature_importance_dir = Path(feature_importance_dir)
+    output_dir = Path(output_dir) / regime_mode
+
+    results = {}
+
+    for model_name in models:
+        yearly_frames = []
+
+        for path in sorted(feature_importance_dir.glob(
+            f"{model_name.lower()}_importance_year_*.csv"
+        )):
+            yearly = pd.read_csv(path, index_col=0)
+
+            # Expected CSV format:
+            # index: feature name
+            # column: importance
+            if "importance" not in yearly.columns:
+                raise ValueError(
+                    f"Feature-importance file {path} must contain "
+                    "an 'importance' column."
+                )
+
+            yearly = yearly.rename(columns={"importance": path.stem})
+            yearly_frames.append(yearly)
+
+        if not yearly_frames:
+            logger.warning(
+                "No feature-importance files found for %s in %s.",
+                model_name,
+                feature_importance_dir,
+            )
+            continue
+
+        importance_panel = pd.concat(yearly_frames, axis=1)
+        average_importance = importance_panel.mean(axis=1)
+        std_importance = importance_panel.std(axis=1, ddof=1)
+        n_years = importance_panel.notna().sum(axis=1)
+
+        summary = pd.DataFrame({
+            "feature": average_importance.index,
+            "mean_importance": average_importance.values,
+            "std_importance": std_importance.values,
+            "n_years": n_years.values,
+        }).sort_values("mean_importance", ascending=False)
+
+        results[model_name] = summary
+
+        if save_outputs:
+            output_path = output_dir / (
+                f"feature_importance_average_{model_name.lower()}.csv"
+            )
+            save_csv(summary, output_path, enabled=save_outputs)
+
+    logger.info(
+        "Computed average feature importance for: %s",
+        list(results.keys()),
+    )
+
+    return results
+
+
 def evaluate_predictions(
     predictions: pd.DataFrame,
     regime_config,

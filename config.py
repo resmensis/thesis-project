@@ -107,8 +107,8 @@ class HyperGridConfig:
     })
 
     pcr_base: Dict = field(default_factory=lambda: {
-        "pca__n_components": [3, 5, 10, 20, 30, 50, 70, 90, 100],
-    })
+        "pca__n_components": [3, 5, 10],
+    }) # , 20, 30, 50, 70, 90, 100
 
     pcr_extended: Dict = field(default_factory=lambda: {
         "pca__n_components": [3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 90, 100],

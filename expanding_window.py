@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
-from models_linear import tune_pcr, tune_pls, tune_huber_regression, fit_custom_huber
+from models_linear import tune_pcr_huber, tune_pcr_linear, tune_pls, tune_huber_regression, fit_custom_huber
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
@@ -223,6 +223,7 @@ def train_models_for_year(
         logger.debug("Training OLS_full (custom Huber) with all features")
         models["OLS_full"] = fit_custom_huber(X_train_s, y_train)
 
+    """
     if run_all or "OLS_full_old" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
         huber_grid = (
@@ -238,16 +239,17 @@ def train_models_for_year(
             y_val=y_val,
             param_grid=huber_grid,
         )["model"]
+    """
 
-    if run_all or "PCR" in (models_to_run or []):
-        # PCR: PCA + HuberLinearRegressor
+    if run_all or "PCR_Huber" in (models_to_run or []):
+        # PCR_Huber: PCA + HuberLinearRegressor
         pcr_grid = (
             grid_config.pcr_extended
             if grid_config.use_extended_grids
             else grid_config.pcr_base
         )
-        logger.debug("Training PCR")
-        models["PCR"] = tune_pcr(
+        logger.debug("Training PCR_Huber")
+        models["PCR_Huber"] = tune_pcr_huber(
             X_train=X_train_s,
             y_train=y_train,
             X_val=X_val_s,
@@ -255,6 +257,23 @@ def train_models_for_year(
             random_state=repro_config.random_state,
             param_grid=pcr_grid,
         )["model"]
+
+    if run_all or "PCR_Linear" in (models_to_run or []):
+            # PCR_Linear: PCA + HuberLinearRegressor
+            pcr_grid = (
+                grid_config.pcr_extended
+                if grid_config.use_extended_grids
+                else grid_config.pcr_base
+            )
+            logger.debug("Training PCR_Linear")
+            models["PCR_Linear"] = tune_pcr_linear(
+                X_train=X_train_s,
+                y_train=y_train,
+                X_val=X_val_s,
+                y_val=y_val,
+                random_state=repro_config.random_state,
+                param_grid=pcr_grid,
+            )["model"]
 
     if run_all or "PLS" in (models_to_run or []):
         # PLS: PLSRegression
@@ -290,7 +309,7 @@ def train_models_for_year(
         )["model"]
 
     if run_all or "GBRT" in (models_to_run or []):
-        # GBRT
+        # GBRT: Gradient Boosted Regression Trees
         gbrt_grid = (
             grid_config.gbrt_extended 
             if grid_config.use_extended_grids 
@@ -303,7 +322,7 @@ def train_models_for_year(
             X_val, 
             y_val, 
             random_state=repro_config.random_state, 
-            param_grid=gbrt_grid
+            param_grid=gbrt_grid,
         )["model"]
 
     requested_models = set(models_to_run or [])
@@ -461,6 +480,10 @@ def run_expanding_window(
     ensure_dir(outdir)
 
     all_predictions_path = outdir / "all_predictions.parquet"
+    
+
+    feature_importance_dir = outdir / "feature_importance"
+    ensure_dir(feature_importance_dir)
 
     # Initialize or load the cumulative wide prediction store.
     first_test_df = yearly_splits[0]["test_df"]
@@ -498,6 +521,32 @@ def run_expanding_window(
             logger.warning(f"Year {year}: no models were trained; skipping.")
             continue
 
+        """
+        importance_frames = {}
+
+        for model_name in ["RandomForest", "GBRT"]:
+            if model_name in models:
+                result = models[model_name]
+
+                # If your tuner returns only the model, use result.feature_importances_.
+                if isinstance(result, dict) and "feature_importance" in result:
+                    importance = result["feature_importance"]
+                else:
+                    importance = pd.Series(
+                        result.feature_importances_,
+                        index=feature_cols,
+                        name="importance",
+                    )
+
+                importance_frames[model_name] = importance
+
+                importance_path = (
+                    feature_importance_dir
+                    / f"{model_name.lower()}_importance_year_{year}.csv"
+                )
+                importance.to_csv(importance_path, header=True)
+        """
+                
         yearly_predictions = generate_predictions(
             models=models,
             test_df=test_df,
