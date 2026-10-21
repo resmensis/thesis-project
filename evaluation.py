@@ -258,184 +258,268 @@ def compute_diebold_mariano_tests(
     return pd.DataFrame(rows)
 
 
+def compute_portfolio_metrics(
+    portfolio_returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute summary statistics for monthly portfolio returns.
+
+    For every model, weighting scheme, and portfolio, this function
+    computes:
+      - average realized monthly return
+      - monthly standard deviation of realized returns
+      - annualized Sharpe ratio of realized returns
+      - average predicted portfolio return
+      - number of monthly observations
+    """
+    if portfolio_returns.empty:
+        return pd.DataFrame(
+            columns=[
+                "model",
+                "weighting",
+                "portfolio",
+                "mean_realized_return",
+                "std_realized_return",
+                "sharpe_ratio",
+                "mean_predicted_return",
+                "n_months",
+            ]
+        )
+
+    rows = []
+
+    for (
+        model_name,
+        weighting,
+        portfolio,
+    ), group in portfolio_returns.groupby(
+        ["model", "weighting", "portfolio"],
+        sort=False,
+    ):
+        realized = group["realized_return"].dropna()
+        predicted = group["predicted_return"].dropna()
+
+        mean_realized = realized.mean() if len(realized) else np.nan
+        std_realized = (
+            realized.std(ddof=1) if len(realized) > 1 else np.nan
+        )
+
+        if len(realized) > 1 and std_realized != 0:
+            sharpe_ratio = (
+                np.sqrt(12.0) * mean_realized / std_realized
+            )
+        else:
+            sharpe_ratio = np.nan
+
+        rows.append({
+            "model": model_name,
+            "weighting": weighting,
+            "portfolio": portfolio,
+            "mean_predicted_return": (
+                predicted.mean() if len(predicted) else np.nan
+            ),
+            "mean_realized_return": mean_realized,
+            "std_realized_return": std_realized,
+            "sharpe_ratio": sharpe_ratio,
+            "n_months": len(realized),
+        })
+
+    return pd.DataFrame(rows)
+
+
 def build_ml_portfolios(
     predictions: pd.DataFrame,
     n_quantiles: int = 10,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Build monthly quantile portfolios for every prediction model.
+    Build monthly prediction-sorted decile portfolios for every model.
 
     For each month and model:
-      1. Sort stocks by the model prediction.
-      2. Assign stocks to n_quantile portfolios.
-      3. Compute value-weighted portfolio returns using mv.
-      4. Construct the high-minus-low portfolio:
-         highest-prediction portfolio minus lowest-prediction portfolio.
+      1. Sort stocks by model prediction.
+      2. Assign stocks to n_quantiles portfolios.
+      3. Compute value-weighted and equal-weighted realized returns.
+      4. Compute the corresponding predicted portfolio returns.
+      5. Construct high-minus-low portfolios:
+         highest-prediction decile minus lowest-prediction decile.
+
+    Portfolio 1 contains the lowest predictions.
+    Portfolio n_quantiles contains the highest predictions.
 
     Returns
     -------
     portfolio_returns : DataFrame
-        One row per month and model, with returns for each quantile
-        portfolio and the high-minus-low portfolio.
+        Long-format monthly realized and predicted portfolio returns.
 
-    portfolio_r2 : DataFrame
-        One row per model, with the portfolio-level predictive R2.
+    portfolio_metrics : DataFrame
+        Summary statistics for realized portfolio returns.
     """
-    model_cols = [
-        c for c in predictions.columns
-        if c.startswith("pred_")
+    required_cols = [
+        "permno",
+        "date",
+        "excess_ret_total",
+        "mv",
     ]
 
-    portfolio_rows = []
-    portfolio_r2_rows = []
+    missing = [
+        column for column in required_cols
+        if column not in predictions.columns
+    ]
+    if missing:
+        raise KeyError(
+            f"predictions is missing required columns: {missing}"
+        )
+
+    model_cols = [
+        column for column in predictions.columns
+        if column.startswith("pred_")
+    ]
+
+    if not model_cols:
+        raise ValueError(
+            "No prediction columns found. Expected columns beginning "
+            "with 'pred_'."
+        )
+
+    portfolio_returns = []
 
     for model_col in model_cols:
         model_name = model_col.removeprefix("pred_")
 
         df = predictions[
-            ["permno", "date", "excess_ret_total", "mv", model_col]
+            required_cols + [model_col]
         ].dropna(
             subset=["excess_ret_total", "mv", model_col]
         ).copy()
 
         df = df[df["mv"] > 0]
 
-        monthly_portfolios = []
-
         for date, month_df in df.groupby("date"):
             if len(month_df) < n_quantiles:
                 continue
 
             month_df = month_df.copy()
 
+            # Rank before cutting so tied predictions do not reduce
+            # the number of portfolios.
+            month_df["prediction_rank"] = month_df[model_col].rank(
+                method="first",
+                ascending=True,
+            )
+
             try:
                 month_df["portfolio"] = pd.qcut(
-                    month_df[model_col],
+                    month_df["prediction_rank"],
                     q=n_quantiles,
                     labels=False,
-                    duplicates="drop",
-                )
+                ) + 1
             except ValueError:
                 continue
 
-            n_portfolios = month_df["portfolio"].nunique()
+            for portfolio in range(1, n_quantiles + 1):
+                portfolio_df = month_df[
+                    month_df["portfolio"] == portfolio
+                ]
 
-            if n_portfolios < n_quantiles:
-                continue
+                realized_vw = np.average(
+                    portfolio_df["excess_ret_total"],
+                    weights=portfolio_df["mv"],
+                )
+                predicted_vw = np.average(
+                    portfolio_df[model_col],
+                    weights=portfolio_df["mv"],
+                )
 
-            month_summary = {
+                realized_ew = portfolio_df["excess_ret_total"].mean()
+                predicted_ew = portfolio_df[model_col].mean()
+
+                portfolio_returns.append({
+                    "date": date,
+                    "model": model_name,
+                    "weighting": "value_weighted",
+                    "portfolio": portfolio,
+                    "realized_return": realized_vw,
+                    "predicted_return": predicted_vw,
+                    "n_stocks": len(portfolio_df),
+                })
+
+                portfolio_returns.append({
+                    "date": date,
+                    "model": model_name,
+                    "weighting": "equal_weighted",
+                    "portfolio": portfolio,
+                    "realized_return": realized_ew,
+                    "predicted_return": predicted_ew,
+                    "n_stocks": len(portfolio_df),
+                })
+
+            low_df = month_df[month_df["portfolio"] == 1]
+            high_df = month_df[
+                month_df["portfolio"] == n_quantiles
+            ]
+
+            realized_vw_low = np.average(
+                low_df["excess_ret_total"],
+                weights=low_df["mv"],
+            )
+            realized_vw_high = np.average(
+                high_df["excess_ret_total"],
+                weights=high_df["mv"],
+            )
+            predicted_vw_low = np.average(
+                low_df[model_col],
+                weights=low_df["mv"],
+            )
+            predicted_vw_high = np.average(
+                high_df[model_col],
+                weights=high_df["mv"],
+            )
+
+            realized_ew_low = low_df["excess_ret_total"].mean()
+            realized_ew_high = high_df["excess_ret_total"].mean()
+            predicted_ew_low = low_df[model_col].mean()
+            predicted_ew_high = high_df[model_col].mean()
+
+            portfolio_returns.append({
                 "date": date,
                 "model": model_name,
-            }
-
-            for portfolio in range(n_quantiles):
-                portfolio_df = month_df[
-                    month_df["portfolio"] == portfolio
-                ]
-
-                weights = portfolio_df["mv"]
-                portfolio_return = np.average(
-                    portfolio_df["excess_ret_total"],
-                    weights=weights,
-                )
-
-                month_summary[f"portfolio_{portfolio + 1}"] = (
-                    portfolio_return
-                )
-
-            low = month_summary["portfolio_1"]
-            high = month_summary[f"portfolio_{n_quantiles}"]
-
-            month_summary["high_minus_low"] = high - low
-
-            monthly_portfolios.append(month_summary)
-
-        model_portfolios = pd.DataFrame(monthly_portfolios)
-
-        if model_portfolios.empty:
-            continue
-
-        portfolio_rows.append(model_portfolios)
-
-        # Portfolio-level predictive R2:
-        # compare the average realized return of the ten portfolios with
-        # the average predicted return of the ten portfolios.
-        portfolio_prediction = []
-
-        for date, month_df in df.groupby("date"):
-            if len(month_df) < n_quantiles:
-                continue
-
-            month_df = month_df.copy()
-
-            try:
-                month_df["portfolio"] = pd.qcut(
-                    month_df[model_col],
-                    q=n_quantiles,
-                    labels=False,
-                    duplicates="drop",
-                )
-            except ValueError:
-                continue
-
-            if month_df["portfolio"].nunique() < n_quantiles:
-                continue
-
-            realized = []
-            predicted = []
-
-            for portfolio in range(n_quantiles):
-                portfolio_df = month_df[
-                    month_df["portfolio"] == portfolio
-                ]
-
-                realized.append(
-                    np.average(
-                        portfolio_df["excess_ret_total"],
-                        weights=portfolio_df["mv"],
-                    )
-                )
-                predicted.append(
-                    np.average(
-                        portfolio_df[model_col],
-                        weights=portfolio_df["mv"],
-                    )
-                )
-
-            portfolio_prediction.append({
-                "date": date,
-                "port_true": np.mean(realized),
-                "port_pred": np.mean(predicted),
+                "weighting": "value_weighted",
+                "portfolio": "high_minus_low",
+                "realized_return": realized_vw_high - realized_vw_low,
+                "predicted_return": predicted_vw_high - predicted_vw_low,
+                "n_stocks": len(high_df) + len(low_df),
             })
 
-        portfolio_prediction_df = pd.DataFrame(portfolio_prediction)
-
-        portfolio_r2_rows.append({
-            "model": model_name,
-            "portfolio_r2": gu_pred_r2(
-                portfolio_prediction_df["port_true"],
-                portfolio_prediction_df["port_pred"],
-            ),
-            "hl_sharpe": compute_sharpe_ratio(
-                model_portfolios["high_minus_low"]
-            ),
-            "n_months": len(model_portfolios),
-        })
+            portfolio_returns.append({
+                "date": date,
+                "model": model_name,
+                "weighting": "equal_weighted",
+                "portfolio": "high_minus_low",
+                "realized_return": realized_ew_high - realized_ew_low,
+                "predicted_return": predicted_ew_high - predicted_ew_low,
+                "n_stocks": len(high_df) + len(low_df),
+            })
 
     portfolio_returns = (
-        pd.concat(portfolio_rows, ignore_index=True)
-        if portfolio_rows
-        else pd.DataFrame()
+        pd.DataFrame(portfolio_returns)
+        if portfolio_returns
+        else pd.DataFrame(
+            columns=[
+                "date",
+                "model",
+                "weighting",
+                "portfolio",
+                "realized_return",
+                "predicted_return",
+                "n_stocks",
+            ]
+        )
     )
 
-    portfolio_metrics = (
-        pd.DataFrame(portfolio_r2_rows)
-        if portfolio_r2_rows
-        else pd.DataFrame()
+    portfolio_metrics = compute_portfolio_metrics(
+        portfolio_returns=portfolio_returns,
     )
 
     return portfolio_returns, portfolio_metrics
-
 
 def compute_average_feature_importance(
     feature_importance_dir: str | Path,
@@ -614,10 +698,19 @@ def evaluate_predictions(
         predictions=predictions,
         n_quantiles=n_quantiles,
     )
+    """
     out_path_portfolio_returns = f"{output_dir}/{regime_config.mode}/portfolio_returns.parquet"
-    save_parquet(portfolio_returns,out_path_portfolio_returns,enabled=save_outputs)
-    out_path_portfolio_metrics = f"{output_dir}/{regime_config.mode}/portfolio_metrics.csv"
-    save_csv(portfolio_metrics,out_path_portfolio_metrics,enabled=save_outputs)
+    save_parquet(portfolio_returns,out_path_portfolio_returns,enabled=save_outputs)    
+    """
+
+    out_path_portfolio_metrics = (
+        f"{output_dir}/{regime_config.mode}/portfolio_metrics.csv"
+    )
+    save_csv(
+        portfolio_metrics,
+        out_path_portfolio_metrics,
+        enabled=save_outputs,
+)
 
     logger.info(
         f"Evaluation completed for {len(model_cols)} models."

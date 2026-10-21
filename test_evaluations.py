@@ -27,7 +27,7 @@ repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig()
 data_cfg = DataFilesConfig()
 run_ctrl_cfg = RunControlConfig()
-regime_cfg = DataRegimeConfig(mode="full")
+regime_cfg = DataRegimeConfig(mode="coding")
 grid_cfg = HyperGridConfig(use_extended_grids=False)
 freq_cfg = CharacteristicsFrequency()
 log_cfg = LoggingConfig()
@@ -47,6 +47,7 @@ predictions_path = f"output/{regime_cfg.mode}/all_predictions.parquet"
 
 predictions = maybe_load_parquet(predictions_path, enabled=True)
 
+
 evaluation = evaluate_predictions(
     predictions=predictions,
     regime_config=regime_cfg,
@@ -55,5 +56,6 @@ evaluation = evaluate_predictions(
     dm_loss="squared_error",
     horizon=1,
     save_outputs=True,
+    feature_importance_dir=f"output/{regime_cfg.mode}/feature_importance",
 )
 

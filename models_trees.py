@@ -156,8 +156,3 @@ def tune_gbrt(
         "cv_results": grid.cv_results_,
         "feature_importance": feature_importance,
     }
-
-
-def feature_importance_table(model, feature_names, top_n=25):
-    importances = pd.Series(model.feature_importances_, index=feature_names).sort_values(ascending=False)
-    return importances.head(top_n).reset_index().rename(columns={"index": "feature", 0: "importance"})
