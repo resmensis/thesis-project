@@ -69,7 +69,7 @@ def tune_random_forest(
     best_model.feature_importances_,
     index=X_train.columns,
     name="importance",
-)
+    )
 
     best_score = gu_pred_r2(y_val, best_model.predict(X_val))
 

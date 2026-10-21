@@ -15,6 +15,7 @@ from config import (
     ModelSelectionConfig,
 )
 
+
 from io_utils import ensure_dir, set_global_seed, setup_project_logger, maybe_load_parquet, maybe_load_pickle
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
@@ -33,8 +34,8 @@ def main():
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
     model_cfg = ModelSelectionConfig(run_all_models = True,
-                                     models_to_run=["PCR_Huber", "PCR_Linear"]
-                                    ) # models_to_run = ["OLS_3", "OLS_3_old", "OLS_full", "RandomForest"] 
+                                     models_to_run=["RandomForest", "GBRT"]
+                                    ) # models_to_run = ["OLS_3", "OLS_3_old", "OLS_full", "PCR_Huber", "PCR_Linear",] 
 
     # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)
@@ -227,6 +228,7 @@ def main():
         dm_loss="squared_error",
         horizon=1,
         save_outputs=True,
+        feature_importance_dir=f"output/{regime_cfg.mode}/feature_importance",
     )
 
 

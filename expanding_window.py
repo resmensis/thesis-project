@@ -156,7 +156,7 @@ def train_models_for_year(
     repro_config: ReproducibilityConfig,
     year: int,
     models_to_run: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], Dict[str, pd.Series]]:
     """
     Train models for a given year using expanded training data.
     
@@ -186,7 +186,8 @@ def train_models_for_year(
     X_val_s = X_val.copy()
     
     models = {}
-    
+    feature_importances = {}    
+
     # Determine which models to run
     if models_to_run is None:
         # Run all models (default)
@@ -299,14 +300,17 @@ def train_models_for_year(
             else grid_config.rf_base
         )
         logger.debug("Training Random Forest")
-        models["RandomForest"] = tune_random_forest(
-            X_train, 
-            y_train, 
-            X_val, 
-            y_val, 
-            random_state=repro_config.random_state, 
-            param_grid=rf_grid
-        )["model"]
+        rf_result = tune_random_forest(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            random_state=repro_config.random_state,
+            param_grid=rf_grid,
+        )
+
+        models["RandomForest"] = rf_result["model"]
+        feature_importances["RandomForest"] = rf_result["feature_importance"]
 
     if run_all or "GBRT" in (models_to_run or []):
         # GBRT: Gradient Boosted Regression Trees
@@ -316,14 +320,17 @@ def train_models_for_year(
             else grid_config.gbrt_base
         )
         logger.debug("Training GBRT")
-        models["GBRT"] = tune_gbrt(
-            X_train, 
-            y_train, 
-            X_val, 
-            y_val, 
-            random_state=repro_config.random_state, 
+        gbrt_result = tune_gbrt(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            random_state=repro_config.random_state,
             param_grid=gbrt_grid,
-        )["model"]
+        )
+
+        models["GBRT"] = gbrt_result["model"]
+        feature_importances["GBRT"] = gbrt_result["feature_importance"]
 
     requested_models = set(models_to_run or [])
 
@@ -379,7 +386,8 @@ def train_models_for_year(
         
         
     logger.info(f"Year {year}: Trained {len(models)} models: {list(models.keys())}")
-    return models
+
+    return models, feature_importances
 
 
 def generate_predictions(
@@ -506,7 +514,7 @@ def run_expanding_window(
             f"forecasting {year}"
         )
 
-        models = train_models_for_year(
+        models, feature_importances = train_models_for_year(
             train_df=train_df,
             val_df=val_df,
             feature_cols=feature_cols,
@@ -520,32 +528,13 @@ def run_expanding_window(
         if not models:
             logger.warning(f"Year {year}: no models were trained; skipping.")
             continue
-
-        """
-        importance_frames = {}
-
-        for model_name in ["RandomForest", "GBRT"]:
-            if model_name in models:
-                result = models[model_name]
-
-                # If your tuner returns only the model, use result.feature_importances_.
-                if isinstance(result, dict) and "feature_importance" in result:
-                    importance = result["feature_importance"]
-                else:
-                    importance = pd.Series(
-                        result.feature_importances_,
-                        index=feature_cols,
-                        name="importance",
-                    )
-
-                importance_frames[model_name] = importance
-
-                importance_path = (
-                    feature_importance_dir
-                    / f"{model_name.lower()}_importance_year_{year}.csv"
-                )
-                importance.to_csv(importance_path, header=True)
-        """
+        
+        for model_name, importance in feature_importances.items():
+            importance_path = (
+                feature_importance_dir
+                / f"{model_name.lower()}_importance_year_{year}.csv"
+            )
+            importance.to_csv(importance_path, header=True)        
                 
         yearly_predictions = generate_predictions(
             models=models,

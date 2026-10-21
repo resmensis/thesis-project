@@ -426,7 +426,7 @@ def build_complete_dataset(
     logger.debug(f"Portortion of ret/dlret data overlap: {has_return_data_proportion}")
 
     merged["excess_ret_total"] = (
-        (1.0 + merged["ret"].fillna(0.0))
+        (1.0 + merged["ret"].fillna(0.0)).abs()  # absoulte value because negative sign signals average ask/bid instead of closing price
         * (1.0 + merged["dlret"].fillna(0.0))
         - 1.0 - merged["rf"]
     ).where(has_return_data)    

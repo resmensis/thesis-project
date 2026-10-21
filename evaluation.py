@@ -523,6 +523,7 @@ def evaluate_predictions(
     dm_loss: str = "squared_error",
     horizon: int = 1,
     save_outputs: bool = True,
+    feature_importance_dir: str | Path | None = None,
 ) -> dict:
     """
     Evaluate all model prediction columns in the wide prediction store.
@@ -623,10 +624,22 @@ def evaluate_predictions(
         f"Metrics save to {output_dir}/{regime_config.mode}"
     )
 
+    feature_importance_results = None
+
+    if feature_importance_dir is not None:
+        feature_importance_results = compute_average_feature_importance(
+            feature_importance_dir=feature_importance_dir,
+            models=["RandomForest", "GBRT"],
+            output_dir=output_dir,
+            regime_mode=regime_config.mode,
+            save_outputs=save_outputs,
+        )
+
     return {
         "r2_metrics_original": r2_metrics_original,
         "r2_metrics": r2_metrics,
         "dm_tests": dm_tests,
         "portfolio_returns": portfolio_returns,
         "portfolio_metrics": portfolio_metrics,
+        "feature_importance": feature_importance_results,
     }
