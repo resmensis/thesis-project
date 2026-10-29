@@ -122,6 +122,18 @@ class HyperGridConfig:
         "n_components": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     })
 
+    linear_svr_base: Dict = field(default_factory=lambda: {
+        "epsilon": [0.0, 0.001, 0.01],
+        "C": [0.01, 0.1, 1.0],
+        "max_iter": [5000],
+    })
+
+    linear_svr_extended: Dict = field(default_factory=lambda: {
+        "epsilon": [0.0, 0.0001, 0.001, 0.01, 0.1],
+        "C": [0.001, 0.01, 0.1, 1.0, 10.0],
+        "max_iter": [5000, 10000],
+    })
+
     rf_base: Dict = field(default_factory=lambda: {
         "n_estimators": [300],
         "max_depth": [1, 2, 3, 4, 5, 6],
@@ -169,22 +181,23 @@ class HyperGridConfig:
     })
 
     lstm_base: Dict = field(default_factory=lambda: {
-        "seq_len": [6, 12],
-        "hidden_dim": [32, 64],
-        "num_layers": [1, 2],
+        "hidden_dim": [16, 32],
+        "num_layers": [1],
         "dropout": [0.0, 0.1],
-        "lr": [1e-3, 5e-4],
-        "batch_size": 1024,
+        "learning_rate": [1e-3],
+        "seq_len": 12,
         "epochs": 20,
-    })
-    lstm_extended: Dict = field(default_factory=lambda: {
-        "seq_len": [3, 6, 12, 24],
-        "hidden_dim": [32, 64, 128],
-        "num_layers": [1, 2, 3],
-        "dropout": [0.0, 0.1, 0.2, 0.3],
-        "lr": [1e-2, 1e-3, 5e-4, 1e-4],
         "batch_size": 1024,
+    })
+
+    lstm_extended: Dict = field(default_factory=lambda: {
+        "hidden_dim": [16, 32, 64],
+        "num_layers": [1, 2],
+        "dropout": [0.0, 0.1, 0.2],
+        "learning_rate": [1e-3, 5e-4],
+        "seq_len": 12,
         "epochs": 30,
+        "batch_size": 1024,
     })
 
 

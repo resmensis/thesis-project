@@ -7,6 +7,7 @@ from numbers import Integral
 from typing import Sequence
 from collections.abc import Hashable
 from typing import Any
+from joblib import Parallel, delayed
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
@@ -674,3 +675,282 @@ class GroupedQuantileTransformer(BaseEstimator, TransformerMixin):
         if self._is_dataframe_:
             return np.asarray(self.feature_names_in_, dtype=object) if hasattr(self, "feature_names_in_") else self.value_cols_
         return np.asarray([f"x{i}" for i in range(self.n_features_in_)], dtype=object)
+
+
+class ParallelGroupedQuantileTransformer(BaseEstimator, TransformerMixin):
+    """Parallel version of GroupedQuantileTransformer.
+
+    Fits one sklearn QuantileTransformer per group and feature. The fits for
+    individual groups are executed in parallel using joblib.
+
+    Parameters
+    ----------
+    group_col : str or int
+        Group column in a DataFrame, or group-column index for array-like input.
+    value_cols : list[str] or list[int] or None, default=None
+        Columns to transform. If None, all columns except group_col are used.
+    output_range : tuple[float, float], default=(-1.0, 1.0)
+        Range of the transformed uniform output.
+    n_quantiles : int, default=1000
+        Passed to sklearn.preprocessing.QuantileTransformer.
+    subsample : int or None, default=10000
+        Passed to QuantileTransformer.
+    random_state : int or None, default=None
+        Passed to QuantileTransformer.
+    copy : bool, default=True
+        Whether to copy input data before transforming.
+    n_jobs : int or None, default=-1
+        Number of parallel jobs used to fit group-specific transformers.
+        ``-1`` uses all available CPU cores, as in GridSearchGV.
+    """
+
+    def __init__(
+        self,
+        group_col: str | int,
+        value_cols: list[str] | None = None,
+        output_range: tuple[float, float] = (-1.0, 1.0),
+        n_quantiles: int = 1000,
+        subsample: int | None = 10000,
+        random_state: int | None = None,
+        copy: bool = True,
+        n_jobs: int | None = -1,
+    ) -> None:
+        self.group_col = group_col
+        self.value_cols = value_cols
+        self.output_range = output_range
+        self.n_quantiles = n_quantiles
+        self.subsample = subsample
+        self.random_state = random_state
+        self.copy = copy
+        self.n_jobs = n_jobs
+
+    def _validate_params(self) -> None:
+        if len(self.output_range) != 2 or self.output_range[0] >= self.output_range[1]:
+            raise ValueError(
+                "output_range must be a pair (low, high) with low < high"
+            )
+        if self.n_quantiles < 1:
+            raise ValueError("n_quantiles must be at least 1")
+
+    def _resolve_columns(self, X: Any, fitting: bool = False):
+        if isinstance(X, pd.DataFrame):
+            if not isinstance(self.group_col, str):
+                raise TypeError(
+                    "group_col must be a column name for DataFrame input"
+                )
+            if self.group_col not in X.columns:
+                raise ValueError(f"Unknown group column: {self.group_col!r}")
+
+            if self.value_cols is None:
+                value_cols = [
+                    col for col in X.columns if col != self.group_col
+                ]
+            else:
+                value_cols = list(self.value_cols)
+                missing = [
+                    col for col in value_cols if col not in X.columns
+                ]
+                if missing:
+                    raise ValueError(f"Unknown value columns: {missing}")
+                if self.group_col in value_cols:
+                    raise ValueError(
+                        "group_col cannot also be in value_cols"
+                    )
+
+            if fitting:
+                self.value_cols_ = np.asarray(value_cols, dtype=object)
+            elif list(value_cols) != list(self.value_cols_):
+                raise ValueError(
+                    "Input value columns differ from those used during fit"
+                )
+
+            return X[self.group_col], X[value_cols], value_cols, True
+
+        array = np.asarray(X)
+        if array.ndim != 2:
+            raise ValueError(
+                "X must be a 2-dimensional DataFrame or array-like object"
+            )
+        if not isinstance(self.group_col, int):
+            raise TypeError(
+                "group_col must be an integer for array-like input"
+            )
+        if not 0 <= self.group_col < array.shape[1]:
+            raise ValueError(
+                "group_col is outside the input columns"
+            )
+
+        if self.value_cols is None:
+            value_cols = [
+                i for i in range(array.shape[1]) if i != self.group_col
+            ]
+        else:
+            value_cols = list(self.value_cols)
+            if any(not isinstance(i, int) for i in value_cols):
+                raise TypeError(
+                    "value_cols must contain integer indices for array-like input"
+                )
+            if any(i < 0 or i >= array.shape[1] for i in value_cols):
+                raise ValueError(
+                    "value_cols contains an index outside the input columns"
+                )
+            if self.group_col in value_cols:
+                raise ValueError(
+                    "group_col cannot also be in value_cols"
+                )
+
+        if fitting:
+            self.value_cols_ = np.asarray(value_cols, dtype=int)
+        elif not np.array_equal(value_cols, self.value_cols_):
+            raise ValueError(
+                "Input value columns differ from those used during fit"
+            )
+
+        return (
+            array[:, self.group_col],
+            array[:, value_cols],
+            value_cols,
+            False,
+        )
+
+    @staticmethod
+    def _fit_group_transformers(
+        group: Hashable,
+        group_values: np.ndarray,
+        n_quantiles: int,
+        subsample: int | None,
+        random_state: int | None,
+        copy: bool,
+    ) -> tuple[Hashable, list[QuantileTransformer | None]]:
+        transformers: list[QuantileTransformer | None] = []
+
+        for j in range(group_values.shape[1]):
+            observed = group_values[:, j]
+            observed = observed[~np.isnan(observed)]
+
+            if observed.size == 0:
+                transformers.append(None)
+                continue
+
+            kwargs = {
+                "n_quantiles": min(n_quantiles, observed.size),
+                "output_distribution": "uniform",
+                "random_state": random_state,
+                "copy": copy,
+            }
+            if subsample is not None:
+                kwargs["subsample"] = subsample
+
+            transformer = QuantileTransformer(**kwargs)
+            transformer.fit(observed.reshape(-1, 1))
+            transformers.append(transformer)
+
+        return group, transformers
+
+    def fit(self, X: Any, y: Any = None):
+        self._validate_params()
+
+        groups, values, value_cols, is_dataframe = self._resolve_columns(
+            X, fitting=True
+        )
+
+        numeric = (
+            values.apply(pd.to_numeric, errors="raise").to_numpy(dtype=float)
+            if is_dataframe
+            else np.asarray(values, dtype=float)
+        )
+
+        self.n_features_in_ = numeric.shape[1]
+        self.groups_ = pd.unique(groups)
+        self._is_dataframe_ = is_dataframe
+
+        group_args = []
+        for group in self.groups_:
+            group_mask = np.asarray(groups == group)
+            group_values = numeric[group_mask, :]
+
+            group_args.append(
+                delayed(self._fit_group_transformers)(
+                    group,
+                    group_values,
+                    self.n_quantiles,
+                    self.subsample,
+                    self.random_state,
+                    self.copy,
+                )
+            )
+
+        fitted = Parallel(n_jobs=self.n_jobs)(group_args)
+
+        self.group_transformers_: dict[
+            Hashable, list[QuantileTransformer | None]
+        ] = dict(fitted)
+
+        return self
+
+    def transform(self, X: Any):
+        check_is_fitted(
+            self, ["group_transformers_", "value_cols_"]
+        )
+
+        groups, values, value_cols, is_dataframe = self._resolve_columns(
+            X, fitting=False
+        )
+
+        numeric = (
+            values.apply(pd.to_numeric, errors="raise").to_numpy(dtype=float)
+            if is_dataframe
+            else np.asarray(values, dtype=float)
+        )
+
+        result = X.copy() if self.copy else X
+        low, high = self.output_range
+
+        for group in pd.unique(groups):
+            if group not in self.group_transformers_:
+                raise ValueError(
+                    f"Unknown group {group!r} encountered during transform"
+                )
+
+            group_mask = np.asarray(groups == group)
+
+            for j, transformer in enumerate(
+                self.group_transformers_[group]
+            ):
+                valid = group_mask & ~np.isnan(numeric[:, j])
+
+                if transformer is None or not valid.any():
+                    continue
+
+                uniform = transformer.transform(
+                    numeric[valid, j].reshape(-1, 1)
+                ).ravel()
+
+                result_values = low + (high - low) * uniform
+
+                if is_dataframe:
+                    result.loc[
+                        result.index[valid], value_cols[j]
+                    ] = result_values
+                else:
+                    result[valid, value_cols[j]] = result_values
+
+        return result
+
+    def get_feature_names_out(self, input_features=None):
+        check_is_fitted(self, ["value_cols_"])
+
+        if input_features is not None:
+            return np.asarray(input_features, dtype=object)
+
+        if self._is_dataframe_:
+            if hasattr(self, "feature_names_in_"):
+                return np.asarray(
+                    self.feature_names_in_, dtype=object
+                )
+            return self.value_cols_
+
+        return np.asarray(
+            [f"x{i}" for i in range(self.n_features_in_)],
+            dtype=object,
+        )

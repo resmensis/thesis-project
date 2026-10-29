@@ -628,6 +628,7 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # Quantile Transformation 
     # ------------------------------------------------------------------
+    logger.info(f"Quantile Transformation: Scaling {len(cols_chara)} columns")
 
     scalar = GroupedQuantileTransformer(
         group_col="date",

@@ -34,7 +34,7 @@ def main():
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
     model_cfg = ModelSelectionConfig(run_all_models = True,
-                                     models_to_run=["RandomForest", "GBRT"]
+                                     models_to_run=["LSTM"]
                                     ) # models_to_run = ["OLS_3", "OLS_3_old", "OLS_full", "PCR_Huber", "PCR_Linear",] 
 
     # Set global seed ONCE at the start - ensures reproducibility across all runs

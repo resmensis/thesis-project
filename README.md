@@ -27,7 +27,7 @@ This project implements an expanding window forecasting framework for asset pric
 
 ```bash
 # Core dependencies
-pip install pandas numpy scikit-learn matplotlib torch scipy
+pip install pandas numpy scikit-learn matplotlib torch scipy scikeras
 
 # Parquet support (REQUIRED)
 pip install pyarrow

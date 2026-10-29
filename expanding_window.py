@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
 
 from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
-from models_linear import tune_pcr_huber, tune_pcr_linear, tune_pls, tune_huber_regression, fit_custom_huber
+from models_linear import fit_custom_huber, tune_huber_regression, tune_pcr_huber, tune_pcr_linear, tune_pls, tune_linear_svr
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
 from models_lstm import tune_lstm_models
@@ -292,6 +292,22 @@ def train_models_for_year(
             param_grid=pls_grid,
         )["model"]
 
+    if run_all or "LinearSVR" in (models_to_run or []):
+        # Linear Support Vector Regression
+        linear_svr_grid = (
+            grid_config.linear_svr_extended
+            if grid_config.use_extended_grids
+            else grid_config.linear_svr_base
+        )
+        logger.debug("Training LinearSVR")
+        models["LinearSVR"] = tune_linear_svr(
+            X_train=X_train_s,
+            y_train=y_train,
+            X_val=X_val_s,
+            y_val=y_val,
+            param_grid=linear_svr_grid,
+        )["model"]
+
     if run_all or "RandomForest" in (models_to_run or []):
         # Random Forest
         rf_grid = (
@@ -370,20 +386,41 @@ def train_models_for_year(
             models[model_name] = result["model"]
 
     if run_all or "LSTM" in (models_to_run or []):
-        lstm_grid = grid_config.lstm_extended if grid_config.use_extended_grids else grid_config.lstm_base
-        # LSTM: Only when running all models (computationally expensive)
-        logger.debug("Training LSTM")
+        lstm_grid = (
+            grid_config.lstm_extended
+            if grid_config.use_extended_grids
+            else grid_config.lstm_base
+        )
+
+        logger.debug("Training Keras LSTM")
+
         try:
             models["LSTM"] = tune_lstm_models(
-                train_df=train_df, 
-                val_df=val_df, 
-                feature_cols=feature_cols, 
-                param_grid=lstm_grid, 
-                random_state=repro_config.random_state
+                train_df=train_df,
+                val_df=val_df,
+                feature_cols=feature_cols,
+                param_grid=lstm_grid,
+                seq_len=lstm_grid["seq_len"],
+                epochs=lstm_grid["epochs"],
+                batch_size=lstm_grid["batch_size"],
+                random_state=repro_config.random_state,
             )["model"]
         except Exception as e:
-            logger.warning(f"LSTM training failed: {e}. Skipping LSTM for year {year}.")  
-        
+            logger.warning(
+                f"LSTM training failed: {e}. Skipping LSTM for year {year}."
+            )
+        """
+        models["LSTM"] = tune_lstm_models(
+            train_df=train_df,
+            val_df=val_df,
+            feature_cols=feature_cols,
+            param_grid=lstm_grid,
+            seq_len=lstm_grid["seq_len"],
+            epochs=lstm_grid["epochs"],
+            batch_size=lstm_grid["batch_size"],
+            random_state=repro_config.random_state,
+        )["model"]
+        """
         
     logger.info(f"Year {year}: Trained {len(models)} models: {list(models.keys())}")
 

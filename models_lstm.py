@@ -1,112 +1,232 @@
 from __future__ import annotations
+
 import logging
+from typing import Callable
+
 import numpy as np
-import torch
-from torch import nn
-from torch.utils.data import Dataset, DataLoader
-from io_utils import set_global_seed
+import pandas as pd
+
+import keras
+from keras import layers, models
+
+from scikeras.wrappers import KerasRegressor
+
+from sklearn.model_selection import GridSearchCV, PredefinedSplit
+from sklearn.metrics import make_scorer
 
 from evaluation import gu_pred_r2
 
 logger = logging.getLogger("eap_ml.models_lstm")
 
-
-class PanelSequenceDataset(Dataset):
-    def __init__(self, df, feature_cols, target_col="excess_ret_total", seq_len=12):
-        self.samples = []
-        for permno, g in df.sort_values(["permno", "date"]).groupby("permno"):
-            g = g.reset_index(drop=True)
-            X = g[feature_cols].to_numpy(dtype=np.float32)
-            y = g[target_col].to_numpy(dtype=np.float32)
-            dates = g["date"].to_numpy()
-            for t in range(seq_len - 1, len(g)):
-                x_seq = X[t-seq_len+1:t+1]
-                y_t = y[t]
-                self.samples.append((x_seq, y_t, permno, dates[t]))
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        x, y, permno, dt = self.samples[idx]
-        return torch.tensor(x), torch.tensor(y), permno, dt
+gu_pred_r2_scorer = make_scorer(gu_pred_r2)
 
 
-class LSTMRegressor(nn.Module):
-    def __init__(self, input_dim, hidden_dim=64, num_layers=1, dropout=0.0):
-        super().__init__()
-        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
-        self.head = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1))
+def build_panel_sequences(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    target_col: str,
+    seq_len: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Convert a stock-month panel into fixed-length sequences.
 
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        h = out[:, -1, :]
-        return self.head(h).squeeze(-1)
+    For stock i at month t, the target is excess_ret_total at t and the
+    input contains features from months t - seq_len + 1 through t.
+    """
+    sequences = []
+    targets = []
 
+    for _, stock_df in df.sort_values(
+        ["permno", "date"]
+    ).groupby("permno", sort=False):
 
-def predictive_r2_np(y_true, y_pred):
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-    denom = np.sum((y_true - y_true.mean()) ** 2)
-    num = np.sum((y_true - y_pred) ** 2)
-    return 1.0 - num / denom if denom > 0 else np.nan
+        stock_df = stock_df.reset_index(drop=True)
 
+        if len(stock_df) < seq_len:
+            continue
 
-def train_lstm_model(train_df, val_df, feature_cols, seq_len=12, hidden_dim=64, num_layers=1, dropout=0.0, lr=1e-3, batch_size=1024, epochs=20, device=None, random_state=42):
-    logger.info(f"Training LSTM: seq_len={seq_len}, hidden={hidden_dim}, layers={num_layers}")
-    set_global_seed(random_state=random_state, torch_deterministic=True)
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    train_ds = PanelSequenceDataset(train_df, feature_cols, seq_len=seq_len)
-    val_ds = PanelSequenceDataset(val_df, feature_cols, seq_len=seq_len)
-    gen = torch.Generator()
-    gen.manual_seed(random_state)
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, generator=gen)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
-    model = LSTMRegressor(input_dim=len(feature_cols), hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.MSELoss()
-    best_state = None
-    best_val_r2 = -np.inf
-    for epoch in range(epochs):
-        model.train()
-        for Xb, yb, _, _ in train_loader:
-            Xb = Xb.to(device)
-            yb = yb.to(device)
-            optimizer.zero_grad()
-            pred = model(Xb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            optimizer.step()
-        model.eval()
-        preds, trues = [], []
-        with torch.no_grad():
-            for Xb, yb, _, _ in val_loader:
-                Xb = Xb.to(device)
-                pred = model(Xb).cpu().numpy()
-                preds.append(pred)
-                trues.append(yb.numpy())
-        y_val = np.concatenate(trues) if trues else np.array([])
-        p_val = np.concatenate(preds) if preds else np.array([])
-        val_r2 = predictive_r2_np(y_val, p_val) if len(y_val) else -np.inf
-        if val_r2 > best_val_r2:
-            best_val_r2 = val_r2
-            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    logger.info(f"LSTM training completed, best val R2: {best_val_r2:.4f}")
-    return {"model": model, "val_r2": best_val_r2}
+        X = stock_df[feature_cols].to_numpy(dtype=np.float32)
+        y = stock_df[target_col].to_numpy(dtype=np.float32)
+
+        for end_index in range(seq_len, len(stock_df) + 1):
+            sequences.append(X[end_index - seq_len:end_index])
+            targets.append(y[end_index - 1])
+
+    if not sequences:
+        return (
+            np.empty((0, seq_len, len(feature_cols)), dtype=np.float32),
+            np.empty((0,), dtype=np.float32),
+        )
+
+    return (
+        np.asarray(sequences, dtype=np.float32),
+        np.asarray(targets, dtype=np.float32),
+    )
 
 
-def tune_lstm_models(train_df, val_df, feature_cols, param_grid, random_state=42):
-    logger.info("Tuning LSTM models")
-    best = {"model": None, "val_r2": -np.inf, "params": None}
-    for seq_len in param_grid["seq_len"]:
-        for hidden_dim in param_grid["hidden_dim"]:
-            for num_layers in param_grid["num_layers"]:
-                for dropout in param_grid["dropout"]:
-                    for lr in param_grid["lr"]:
-                        res = train_lstm_model(train_df=train_df, val_df=val_df, feature_cols=feature_cols, seq_len=seq_len, hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout, lr=lr, batch_size=param_grid.get("batch_size", 1024), epochs=param_grid.get("epochs", 20), random_state=random_state)
-                        if res["val_r2"] > best["val_r2"]:
-                            best = {"model": res["model"], "val_r2": res["val_r2"], "params": {"seq_len": seq_len, "hidden_dim": hidden_dim, "num_layers": num_layers, "dropout": dropout, "lr": lr}}
-    logger.info(f"Best LSTM val R2: {best['val_r2']:.4f}, params: {best['params']}")
-    return best
+def build_lstm_model(
+    input_dim: int,
+    seq_len: int,
+    hidden_dim: int = 32,
+    num_layers: int = 1,
+    dropout: float = 0.0,
+    learning_rate: float = 1e-3,
+) -> keras.Model:
+    """
+    Build a slim Keras LSTM regression model.
+    """
+    inputs = keras.Input(shape=(seq_len, input_dim))
+
+    x = inputs
+
+    for layer_index in range(num_layers):
+        x = layers.LSTM(
+            units=hidden_dim,
+            return_sequences=layer_index < num_layers - 1,
+            dropout=dropout,
+        )(x)
+
+    x = layers.Dense(16, activation="relu")(x)
+    outputs = layers.Dense(1)(x)
+
+    model = models.Model(inputs=inputs, outputs=outputs)
+
+    model.compile(
+        optimizer=keras.optimizers.Adam(
+            learning_rate=learning_rate
+        ),
+        loss="mse",
+    )
+
+    return model
+
+
+def tune_lstm_models(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    feature_cols: list[str],
+    param_grid: dict,
+    seq_len: int = 12,
+    epochs: int = 20,
+    batch_size: int = 1024,
+    random_state: int = 42,
+) -> dict:
+    """
+    Tune a Keras LSTM using GridSearchCV and the project's fixed
+    train/validation split.
+
+    seq_len is fixed because it determines the LSTM input shape.
+    """
+    logger.info(
+        f"Tuning Keras LSTM: {len(train_df)} train and "
+        f"{len(val_df)} validation observations; seq_len={seq_len}"
+    )
+
+    X_train, y_train = build_panel_sequences(
+        df=train_df,
+        feature_cols=feature_cols,
+        target_col="excess_ret_total",
+        seq_len=seq_len,
+    )
+
+    X_val, y_val = build_panel_sequences(
+        df=val_df,
+        feature_cols=feature_cols,
+        target_col="excess_ret_total",
+        seq_len=seq_len,
+    )
+
+    if len(X_train) == 0 or len(X_val) == 0:
+        raise ValueError(
+            "Insufficient observations to construct LSTM sequences."
+        )
+
+    X = np.concatenate([X_train, X_val], axis=0)
+    y = np.concatenate([y_train, y_val], axis=0)
+
+    test_fold = np.concatenate([
+        np.full(len(X_train), -1, dtype=int),
+        np.zeros(len(X_val), dtype=int),
+    ])
+
+    splitter = PredefinedSplit(test_fold=test_fold)
+
+    def model_builder(
+        hidden_dim: int = 32,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+        learning_rate: float = 1e-3,
+    ) -> keras.Model:
+        return build_lstm_model(
+            input_dim=len(feature_cols),
+            seq_len=seq_len,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            learning_rate=learning_rate,
+        )
+
+    regressor = KerasRegressor(
+        model=model_builder,
+        epochs=epochs,
+        batch_size=batch_size,
+        verbose=0,
+        random_state=random_state,
+        input_dim=len(feature_cols),
+        seq_len=seq_len,
+    )
+
+    sklearn_param_grid = {
+        "model__hidden_dim": param_grid["hidden_dim"],
+        "model__num_layers": param_grid["num_layers"],
+        "model__dropout": param_grid["dropout"],
+        "model__learning_rate": param_grid["learning_rate"],
+    }
+
+    grid = GridSearchCV(
+        estimator=regressor,
+        param_grid=sklearn_param_grid,
+        scoring=gu_pred_r2_scorer,
+        cv=splitter,
+        refit=False,
+        n_jobs=1,
+        return_train_score=False,
+        verbose=1,
+    )
+
+    grid.fit(X, y)
+
+    best_params = {
+        key.removeprefix("model__"): value
+        for key, value in grid.best_params_.items()
+    }
+
+    best_model = model_builder(**best_params)
+
+    best_model.fit(
+        X_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        verbose=0,
+    )
+
+    best_score = float(
+        gu_pred_r2(
+            y_val,
+            best_model.predict(X_val, verbose=0).ravel(),
+        )
+    )
+
+    logger.info(
+        "Best LSTM validation R2=%.6f; params=%s",
+        best_score,
+        {"seq_len": seq_len, **best_params},
+    )
+
+    return {
+        "model": best_model,
+        "val_r2": best_score,
+        "params": {"seq_len": seq_len, **best_params},
+        "cv_results": grid.cv_results_,
+    }
