@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
-from transformers import GroupedMedianImputer, GroupedQuantileTransformer, GroupedLagShiftTransformer
+from transformers import GroupedMedianImputer, GroupedQuantileTransformer, GroupedLagShiftTransformer, ParallelGroupedQuantileTransformer
 
 from pathlib import Path
 from typing import Optional
@@ -630,7 +630,7 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     logger.info(f"Quantile Transformation: Scaling {len(cols_chara)} columns")
 
-    scalar = GroupedQuantileTransformer(
+    scalar = ParallelGroupedQuantileTransformer(
         group_col="date",
         value_cols=cols_chara,
         output_range=(-1, 1),

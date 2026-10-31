@@ -98,6 +98,7 @@ def build_feature_panel(
     if regime_config.mode == "full":
         if regime_config.include_macro_interactions:
             out = create_macro_interactions(out, cols_chara, cols_macro)
+            out = out.drop(columns=cols_macro)
 
         interaction_cols = [c for c in out.columns if "__x__" in c]
         feature_cols = cols_chara + interaction_cols + industry_cols
@@ -148,6 +149,7 @@ def build_feature_panel(
 
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
-    save_parquet(out, out_path_panel, enabled=save_feature_panel)
-    save_pickle(feature_cols, out_path_cols, enabled=save_feature_panel)
+    if not regime_config.mode == "full" and not regime_config.include_macro_interactions:
+        save_parquet(out, out_path_panel, enabled=save_feature_panel)
+        save_pickle(feature_cols, out_path_cols, enabled=save_feature_panel)
     return out, feature_cols

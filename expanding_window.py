@@ -385,6 +385,7 @@ def train_models_for_year(
         for model_name, result in mlp_results.items():
             models[model_name] = result["model"]
 
+    """
     if run_all or "LSTM" in (models_to_run or []):
         lstm_grid = (
             grid_config.lstm_extended
@@ -409,7 +410,6 @@ def train_models_for_year(
             logger.warning(
                 f"LSTM training failed: {e}. Skipping LSTM for year {year}."
             )
-        """
         models["LSTM"] = tune_lstm_models(
             train_df=train_df,
             val_df=val_df,
@@ -420,7 +420,7 @@ def train_models_for_year(
             batch_size=lstm_grid["batch_size"],
             random_state=repro_config.random_state,
         )["model"]
-        """
+    """
         
     logger.info(f"Year {year}: Trained {len(models)} models: {list(models.keys())}")
 
