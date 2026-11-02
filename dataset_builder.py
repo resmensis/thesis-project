@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
-from transformers import GroupedMedianImputer, GroupedQuantileTransformer, GroupedLagShiftTransformer, ParallelGroupedQuantileTransformer
+from transformers import GroupedMedianImputer, GroupedQuantileTransformer, GroupedLagShiftTransformer, ParallelGroupedQuantileTransformer, ParallelGroupedLagShiftTransformer
 
 from pathlib import Path
 from typing import Optional
@@ -440,10 +440,10 @@ def build_complete_dataset(
         * merged["shrout"].fillna(0.0)
     )
 
-    transformer_1month = GroupedLagShiftTransformer(
+    transformer_1month = ParallelGroupedLagShiftTransformer(
             lag=1,
             group_col="permno",
-            value_cols=["mv"],
+            value_cols=["mv", "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"],
             create_new_cols=False,
             rename_mode="lagged",
             suffix=None,

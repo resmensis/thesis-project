@@ -197,7 +197,6 @@ class GroupedMedianImputer(BaseEstimator, TransformerMixin):
             )
 
 
-
 class GroupedLagShiftTransformer(BaseEstimator, TransformerMixin):
     """
     Apply a grouped shift to selected pandas DataFrame columns.
@@ -954,3 +953,300 @@ class ParallelGroupedQuantileTransformer(BaseEstimator, TransformerMixin):
             [f"x{i}" for i in range(self.n_features_in_)],
             dtype=object,
         )
+
+
+class ParallelGroupedLagShiftTransformer(BaseEstimator, TransformerMixin):
+    """
+    Parallel version of GroupedLagShiftTransformer.
+
+    Applies a grouped shift independently within each group. Groups are
+    processed in parallel using joblib.
+
+    Parameters
+    ----------
+    lag : int, default=1
+        Shift length. Positive values create backward lags; negative values
+        create forward shifts.
+
+    group_col : str, default="group_id"
+        Column defining the groups, e.g. "permno".
+
+    value_cols : sequence of str or None, default=None
+        Columns to shift. If None, all columns except group_col are shifted.
+
+    create_new_cols : bool, default=True
+        If True, preserve original columns and add shifted columns.
+        If False, replace original value columns with shifted values.
+
+    rename_mode : {"lagged", "original", "none"}, default="lagged"
+        Naming behavior when create_new_cols=True.
+
+    suffix : str or None, default=None
+        Suffix for lagged columns. If None, generated from lag.
+
+    original_suffix : str, default="_original"
+        Suffix added to original columns when rename_mode="original".
+
+    n_jobs : int or None, default=-1
+        Number of parallel jobs. -1 uses all available cores.
+    """
+
+    def __init__(
+        self,
+        lag: int = 1,
+        group_col: str = "group_id",
+        value_cols: Sequence[str] | None = None,
+        create_new_cols: bool = True,
+        rename_mode: str = "lagged",
+        suffix: str | None = None,
+        original_suffix: str = "_original",
+        n_jobs: int | None = -1,
+    ) -> None:
+        self.lag = lag
+        self.group_col = group_col
+        self.value_cols = value_cols
+        self.create_new_cols = create_new_cols
+        self.rename_mode = rename_mode
+        self.suffix = suffix
+        self.original_suffix = original_suffix
+        self.n_jobs = n_jobs
+
+    def fit(self, X: pd.DataFrame, y=None):
+        self._validate_parameters()
+        self._validate_columns(X, fitting=True)
+
+        self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+
+        if self.suffix is None:
+            if self.lag >= 0:
+                self.suffix_ = f"_lag{self.lag}"
+            else:
+                self.suffix_ = f"_shift_forward{abs(self.lag)}"
+        else:
+            self.suffix_ = self.suffix
+
+        self.lagged_names_ = [
+            f"{column}{self.suffix_}"
+            for column in self.value_cols_
+        ]
+
+        self.original_names_ = [
+            f"{column}{self.original_suffix}"
+            for column in self.value_cols_
+        ]
+
+        self._build_feature_names(X)
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        check_is_fitted(
+            self,
+            attributes=[
+                "value_cols_",
+                "lagged_names_",
+                "original_names_",
+                "feature_names_out_",
+            ],
+        )
+
+        self._validate_columns(X, fitting=False)
+
+        group_keys = X[self.group_col].to_numpy()
+        unique_groups = pd.unique(group_keys)
+
+        group_results = Parallel(n_jobs=self.n_jobs)(
+            delayed(self._transform_group)(
+                group=group,
+                group_df=X.loc[group_keys == group],
+            )
+            for group in unique_groups
+        )
+
+        shifted_parts = [result for result, _ in group_results]
+        index_parts = [index for _, index in group_results]
+
+        shifted = pd.concat(shifted_parts, axis=0)
+        shifted = shifted.reindex(index_parts)
+
+        return self._assemble_output(X, shifted)
+
+    def _transform_group(
+        self,
+        group: Hashable,
+        group_df: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, pd.Index]:
+        """
+        Shift columns within one group.
+
+        Returns the shifted values and the original index so that results can
+        be reassembled in the exact input-row order.
+        """
+        shifted = group_df[self.value_cols_].shift(self.lag)
+        return shifted, group_df.index
+
+    def _assemble_output(
+        self,
+        X: pd.DataFrame,
+        shifted: pd.DataFrame,
+    ) -> pd.DataFrame:
+        if not self.create_new_cols:
+            X_out = X.copy()
+            X_out.loc[:, self.value_cols_] = shifted.to_numpy()
+            return X_out
+
+        if self.rename_mode == "lagged":
+            shifted = shifted.copy()
+            shifted.columns = self.lagged_names_
+
+            collisions = [
+                column for column in shifted.columns if column in X.columns
+            ]
+            if collisions:
+                raise ValueError(
+                    f"Lagged columns already exist in X: {collisions}"
+                )
+
+            return pd.concat([X.copy(), shifted], axis=1)
+
+        if self.rename_mode == "original":
+            X_out = X.rename(
+                columns=dict(
+                    zip(self.value_cols_, self.original_names_)
+                )
+            )
+
+            shifted = shifted.copy()
+            shifted.columns = self.value_cols_
+
+            return pd.concat([X_out, shifted], axis=1)
+
+        shifted = shifted.copy()
+        shifted.columns = self.value_cols_
+
+        collisions = [
+            column for column in shifted.columns if column in X.columns
+        ]
+        if collisions:
+            raise ValueError(
+                "rename_mode='none' would create duplicate columns: "
+                f"{collisions}"
+            )
+
+        return pd.concat([X.copy(), shifted], axis=1)
+
+    def _build_feature_names(self, X: pd.DataFrame) -> None:
+        input_columns = list(X.columns)
+
+        if not self.create_new_cols:
+            self.feature_names_out_ = np.asarray(
+                input_columns,
+                dtype=object,
+            )
+            return
+
+        if self.rename_mode == "lagged":
+            output_columns = input_columns + self.lagged_names_
+
+        elif self.rename_mode == "original":
+            original_renames = dict(
+                zip(self.value_cols_, self.original_names_)
+            )
+            original_columns = [
+                original_renames.get(column, column)
+                for column in input_columns
+            ]
+            output_columns = original_columns + self.value_cols_
+
+        else:
+            output_columns = input_columns + self.value_cols_
+
+        if len(set(output_columns)) != len(output_columns):
+            raise ValueError(
+                "The transformer would create duplicate output column names: "
+                f"{output_columns}"
+            )
+
+        self.feature_names_out_ = np.asarray(output_columns, dtype=object)
+
+    def get_feature_names_out(
+        self,
+        input_features=None,
+    ) -> np.ndarray:
+        check_is_fitted(self, attributes=["feature_names_out_"])
+
+        if input_features is not None:
+            input_features = np.asarray(input_features, dtype=object)
+
+            if not np.array_equal(
+                input_features,
+                self.feature_names_in_,
+            ):
+                raise ValueError(
+                    "input_features do not match the columns seen during fit."
+                )
+
+        return self.feature_names_out_.copy()
+
+    def _validate_parameters(self) -> None:
+        if not isinstance(self.lag, Integral):
+            raise TypeError("lag must be an integer.")
+
+        if not isinstance(self.group_col, str):
+            raise TypeError("group_col must be a string.")
+
+        if not isinstance(self.create_new_cols, bool):
+            raise TypeError("create_new_cols must be a boolean.")
+
+        valid_rename_modes = {"lagged", "original", "none"}
+        if self.rename_mode not in valid_rename_modes:
+            raise ValueError(
+                f"rename_mode must be one of {valid_rename_modes}, "
+                f"got {self.rename_mode!r}."
+            )
+
+        if not isinstance(self.original_suffix, str):
+            raise TypeError("original_suffix must be a string.")
+
+    def _validate_columns(
+        self,
+        X: pd.DataFrame,
+        fitting: bool,
+    ) -> None:
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError("X must be a pandas DataFrame.")
+
+        if self.group_col not in X.columns:
+            raise ValueError(
+                f"group_col={self.group_col!r} is not present in X."
+            )
+
+        if self.value_cols is None:
+            value_cols = [
+                column for column in X.columns if column != self.group_col
+            ]
+        else:
+            value_cols = list(self.value_cols)
+
+            missing_cols = [
+                column for column in value_cols if column not in X.columns
+            ]
+            if missing_cols:
+                raise ValueError(
+                    f"The following value_cols are missing from X: "
+                    f"{missing_cols}"
+                )
+
+            if self.group_col in value_cols:
+                raise ValueError(
+                    "group_col must not be included in value_cols."
+                )
+
+        if not value_cols:
+            raise ValueError("At least one value column is required.")
+
+        if fitting:
+            self.value_cols_ = value_cols
+        elif list(value_cols) != list(self.value_cols_):
+            raise ValueError(
+                "Input value columns differ from those used during fit."
+            )
