@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import QuantileTransformer
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
 
 from io_utils import save_parquet, save_pickle
 from dataset_builder import summary_stats_extended
-from transformers import GroupedQuantileTransformer
 
 logger = logging.getLogger("eap_ml.features")
 
@@ -64,6 +65,60 @@ def sample_permno_coding(
     )
 
     return df.loc[df[permno_col].isin(selected_permnos)].copy()
+
+
+def plot_feature_correlation_heatmap(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    output_path: str,
+    max_features: int = 40,
+) -> None:
+    """Save a correlation heatmap for the numeric feature columns."""
+    numeric_cols = [
+        c for c in feature_cols
+        if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+    if len(numeric_cols) < 2:
+        logger.warning(
+            "Skipping correlation heatmap: fewer than two numeric feature columns."
+        )
+        return
+
+    if len(numeric_cols) > max_features:
+        logger.warning(
+            f"Correlation heatmap limited to first {max_features} numeric features "
+            f"of {len(numeric_cols)} total."
+        )
+        numeric_cols = numeric_cols[:max_features]
+
+    corr = df[numeric_cols].corr()
+
+    fig, ax = plt.subplots(figsize=(max(10, len(numeric_cols) * 0.45),
+                                    max(8, len(numeric_cols) * 0.40)))
+    sns.heatmap(
+        corr,
+        annot=False,
+        cmap="coolwarm",
+        center=0,
+        vmin=-1,
+        vmax=1,
+        square=True,
+        linewidths=0.3,
+        cbar_kws={"shrink": 0.8},
+        ax=ax,
+    )
+    ax.set_title("Feature Correlation Heatmap")
+    ax.tick_params(axis="x", rotation=90)
+    ax.tick_params(axis="y", rotation=0)
+    fig.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    logger.info(f"Saved correlation heatmap to {output_path}")
 
 
 def build_feature_panel(
@@ -146,6 +201,13 @@ def build_feature_panel(
         output_path=descriptives_path,
         output_name="summary_feature_coding",
         )
+
+    plot_feature_correlation_heatmap(
+        df=out,
+        feature_cols=feature_cols,
+        output_path=str(Path(out_path_panel).with_suffix("").with_suffix(".png")),
+        max_features=94
+    )
 
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
