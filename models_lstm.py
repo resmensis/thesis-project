@@ -6,10 +6,13 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
+"""
 import keras
 from keras import layers, models
 
 from scikeras.wrappers import KerasRegressor
+"""
+
 
 from sklearn.model_selection import GridSearchCV, PredefinedSplit
 from sklearn.metrics import make_scorer

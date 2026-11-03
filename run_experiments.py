@@ -28,12 +28,12 @@ def main():
     cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig(feature_panel_only=True)
-    regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=True, ols3_only_mode=False)
-    grid_cfg = HyperGridConfig(use_extended_grids=False)
+    regime_cfg = DataRegimeConfig(mode="coding", include_macro_interactions=True, ols3_only_mode=False)
+    grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
-    model_cfg = ModelSelectionConfig(run_all_models = False,
+    model_cfg = ModelSelectionConfig(run_all_models = True,
                                      models_to_run= ["OLS_3", "OLS_3_old", "OLS_full", "PCR_Huber", "PCR_Linear"]
                                     )
     # Set global seed ONCE at the start - ensures reproducibility across all runs

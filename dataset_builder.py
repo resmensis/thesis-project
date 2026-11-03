@@ -440,7 +440,7 @@ def build_complete_dataset(
         * merged["shrout"].fillna(0.0)
     )
 
-    transformer_1month = ParallelGroupedLagShiftTransformer(
+    transformer_1month = GroupedLagShiftTransformer(
             lag=1,
             group_col="permno",
             value_cols=["mv", "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"],

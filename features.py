@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
+from typing import Optional
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -70,7 +71,8 @@ def sample_permno_coding(
 def plot_feature_correlation_heatmap(
     df: pd.DataFrame,
     feature_cols: list[str],
-    output_path: str,
+    output_path: Optional[str] = None,
+    output_name: Optional[str] = None,
     max_features: int = 40,
 ) -> None:
     """Save a correlation heatmap for the numeric feature columns."""
@@ -113,12 +115,23 @@ def plot_feature_correlation_heatmap(
     ax.tick_params(axis="y", rotation=0)
     fig.tight_layout()
 
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    # Save to CSV if output_name provided
+    if output_name is not None:
+        # Determine output path
+        if output_path is None:
+            output_dir = Path.cwd()
+        else:
+            output_dir = Path(output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_file = output_dir / f"{output_name}.png"
+        fig.savefig(output_file, dpi=300, bbox_inches="tight")
+
+
+
     plt.close(fig)
 
-    logger.info(f"Saved correlation heatmap to {output_path}")
+    logger.info(f"Saved correlation heatmap to {output_file}")
 
 
 def build_feature_panel(
@@ -205,7 +218,8 @@ def build_feature_panel(
     plot_feature_correlation_heatmap(
         df=out,
         feature_cols=feature_cols,
-        output_path=str(Path(out_path_panel).with_suffix("_charas").with_suffix(".png")),
+        output_path=descriptives_path,
+        output_name=f"{regime_config.mode}_charas",
         max_features=94
     )
 
@@ -213,7 +227,8 @@ def build_feature_panel(
         plot_feature_correlation_heatmap(
                 df=out,
                 feature_cols=feature_cols,
-                output_path=str(Path(out_path_panel).with_suffix("_all").with_suffix(".png")),
+                output_path=descriptives_path,
+                output_name=f"{regime_config.mode}_all",
                 max_features=940
             )
 
