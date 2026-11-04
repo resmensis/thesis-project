@@ -15,6 +15,49 @@ from io_utils import ensure_dir, save_parquet, maybe_load_parquet, save_pickle, 
 logger = logging.getLogger("eap_ml.expanding_window")
 
 
+def save_best_params_by_model(
+    tuning_results: Dict[str, Dict[str, Any]],
+    year: int,
+    output_dir: Path,
+) -> None:
+    """
+    Save the selected hyperparameters of each grid-searched model
+    to a separate CSV file, with one column per hyperparameter.
+
+    For each model, this replaces the row for `year` if it already exists.
+    Parameter columns are the union of parameters seen in previous years
+    and the current year.
+    """
+    params_dir = output_dir / "best_params"
+    params_dir.mkdir(parents=True, exist_ok=True)
+
+    for model_name, result in tuning_results.items():
+        params = result.get("params", {})
+        val_r2 = result.get("val_r2")
+
+        row = {"year": year, "val_r2": val_r2, **params}
+
+        model_path = params_dir / f"{model_name}.csv"
+
+        if model_path.exists():
+            existing = pd.read_csv(model_path)
+            existing = existing[existing["year"] != year]
+        else:
+            existing = pd.DataFrame()
+
+        combined = pd.concat([existing, pd.DataFrame([row])], ignore_index=True)
+
+        # Keep a stable column order: year, val_r2, then parameters.
+        param_columns = [
+            column
+            for column in combined.columns
+            if column not in {"year", "val_r2"}
+        ]
+        combined = combined[["year", "val_r2", *param_columns]]
+
+        combined.to_csv(model_path, index=False)
+
+
 def get_yearly_splits(
     df: pd.DataFrame,
     config: ExpandingWindowConfig,
@@ -156,7 +199,11 @@ def train_models_for_year(
     repro_config: ReproducibilityConfig,
     year: int,
     models_to_run: Optional[List[str]] = None,
-) -> tuple[Dict[str, Any], Dict[str, pd.Series]]:
+) -> tuple[
+    Dict[str, Any],
+    Dict[str, pd.Series],
+    Dict[str, Dict[str, Any]],
+]:
     """
     Train models for a given year using expanded training data.
     
@@ -186,7 +233,8 @@ def train_models_for_year(
     X_val_s = X_val.copy()
     
     models = {}
-    feature_importances = {}    
+    feature_importances = {}
+    tuning_results = {}    
 
     # Determine which models to run
     if models_to_run is None:
@@ -211,13 +259,15 @@ def train_models_for_year(
                         else grid_config.huber_base
                     )
                     logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
-                    models["OLS_3_old"] = tune_huber_regression(
+                    huber_result = tune_huber_regression(
                         X_train=X_train_s[benchmark_features],
                         y_train=y_train,
                         X_val=X_val_s[benchmark_features],
                         y_val=y_val,
                         param_grid=huber_grid,
-                    )["model"]
+                    )
+                    models["OLS_3_old"] = huber_result["model"]
+                    tuning_results["OLS_3_old"] = huber_result
     
     if run_all or "OLS_full" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
@@ -250,31 +300,36 @@ def train_models_for_year(
             else grid_config.pcr_base
         )
         logger.debug("Training PCR_Huber")
-        models["PCR_Huber"] = tune_pcr_huber(
+        pcr_huber_result = tune_pcr_huber(
             X_train=X_train_s,
             y_train=y_train,
             X_val=X_val_s,
             y_val=y_val,
             random_state=repro_config.random_state,
             param_grid=pcr_grid,
-        )["model"]
+        )
+
+        models["PCR_Huber"] = pcr_huber_result["model"]
+        tuning_results["PCR_Huber"] = pcr_huber_result
 
     if run_all or "PCR_Linear" in (models_to_run or []):
-            # PCR_Linear: PCA + HuberLinearRegressor
-            pcr_grid = (
-                grid_config.pcr_extended
-                if grid_config.use_extended_grids
-                else grid_config.pcr_base
-            )
-            logger.debug("Training PCR_Linear")
-            models["PCR_Linear"] = tune_pcr_linear(
-                X_train=X_train_s,
-                y_train=y_train,
-                X_val=X_val_s,
-                y_val=y_val,
-                random_state=repro_config.random_state,
-                param_grid=pcr_grid,
-            )["model"]
+        # PCR_Linear: PCA + HuberLinearRegressor
+        pcr_grid = (
+            grid_config.pcr_extended
+            if grid_config.use_extended_grids
+            else grid_config.pcr_base
+        )
+        logger.debug("Training PCR_Linear")
+        pcr_linear_result = tune_pcr_linear(
+            X_train=X_train_s,
+            y_train=y_train,
+            X_val=X_val_s,
+            y_val=y_val,
+            random_state=repro_config.random_state,
+            param_grid=pcr_grid,
+        )
+        models["PCR_Linear"] = pcr_linear_result["model"]
+        tuning_results["PCR_Linear"] = pcr_linear_result
 
     if run_all or "PLS" in (models_to_run or []):
         # PLS: PLSRegression
@@ -284,13 +339,15 @@ def train_models_for_year(
             else grid_config.pls_base
         )
         logger.debug("Training PLS")
-        models["PLS"] = tune_pls(
+        pls_result = tune_pls(
             X_train=X_train_s,
             y_train=y_train,
             X_val=X_val_s,
             y_val=y_val,
             param_grid=pls_grid,
-        )["model"]
+        )
+        models["PLS"] = pls_result["model"]
+        tuning_results["PLS"] = pls_result
 
     if run_all or "LinearSVR" in (models_to_run or []):
         # Linear Support Vector Regression
@@ -300,13 +357,15 @@ def train_models_for_year(
             else grid_config.linear_svr_base
         )
         logger.debug("Training LinearSVR")
-        models["LinearSVR"] = tune_linear_svr(
+        linear_svr_result = tune_linear_svr(
             X_train=X_train_s,
             y_train=y_train,
             X_val=X_val_s,
             y_val=y_val,
             param_grid=linear_svr_grid,
-        )["model"]
+        )
+        models["LinearSVR"] = linear_svr_result["model"]
+        tuning_results["LinearSVR"] = linear_svr_result
 
     if run_all or "RandomForest" in (models_to_run or []):
         # Random Forest
@@ -327,6 +386,7 @@ def train_models_for_year(
 
         models["RandomForest"] = rf_result["model"]
         feature_importances["RandomForest"] = rf_result["feature_importance"]
+        tuning_results["RandomForest"] = rf_result
 
     if run_all or "GBRT" in (models_to_run or []):
         # GBRT: Gradient Boosted Regression Trees
@@ -347,6 +407,7 @@ def train_models_for_year(
 
         models["GBRT"] = gbrt_result["model"]
         feature_importances["GBRT"] = gbrt_result["feature_importance"]
+        tuning_results["GBRT"] = gbrt_result
 
     requested_models = set(models_to_run or [])
 
@@ -384,6 +445,7 @@ def train_models_for_year(
 
         for model_name, result in mlp_results.items():
             models[model_name] = result["model"]
+            tuning_results[model_name] = result
 
     """
     if run_all or "LSTM" in (models_to_run or []):
@@ -424,7 +486,7 @@ def train_models_for_year(
         
     logger.info(f"Year {year}: Trained {len(models)} models: {list(models.keys())}")
 
-    return models, feature_importances
+    return models, feature_importances, tuning_results
 
 
 def generate_predictions(
@@ -525,10 +587,12 @@ def run_expanding_window(
     ensure_dir(outdir)
 
     all_predictions_path = outdir / "all_predictions.parquet"
-    
 
     feature_importance_dir = outdir / "feature_importance"
     ensure_dir(feature_importance_dir)
+
+    best_params_dir = outdir / "best_params"
+    ensure_dir(best_params_dir)
 
     # Initialize or load the cumulative wide prediction store.
     first_test_df = yearly_splits[0]["test_df"]
@@ -551,7 +615,7 @@ def run_expanding_window(
             f"forecasting {year}"
         )
 
-        models, feature_importances = train_models_for_year(
+        models, feature_importances, tuning_results = train_models_for_year(
             train_df=train_df,
             val_df=val_df,
             feature_cols=feature_cols,
@@ -571,8 +635,14 @@ def run_expanding_window(
                 feature_importance_dir
                 / f"{model_name.lower()}_importance_year_{year}.csv"
             )
-            importance.to_csv(importance_path, header=True)        
-                
+            importance.to_csv(importance_path, header=True)
+
+        save_best_params_by_model(
+            tuning_results=tuning_results,
+            year=year,
+            output_dir=best_params_dir,
+        )
+
         yearly_predictions = generate_predictions(
             models=models,
             test_df=test_df,

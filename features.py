@@ -223,15 +223,16 @@ def build_feature_panel(
         max_features=94
     )
 
+    """    
     if regime_config.mode == "full" and regime_config.include_macro_interactions:
         plot_feature_correlation_heatmap(
                 df=out,
                 feature_cols=feature_cols,
                 output_path=descriptives_path,
-                output_name=f"{regime_config.mode}_all",
+                output_name=f"{regime_config.mode}_all",s
                 max_features=940
             )
-
+    """
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
     save_parquet(out, out_path_panel, enabled=save_feature_panel)
