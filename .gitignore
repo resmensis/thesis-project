@@ -4,3 +4,5 @@ cache
 output
 logs
 data
+descriptives
+run_thesis.sbatch

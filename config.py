@@ -67,12 +67,16 @@ class DataFilesConfig:
     marco_cols: List[str] = field(default_factory=lambda: [
         "d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"
     ])
+    marco_cols_reduced: List[str] = field(default_factory=lambda: [
+            "d/p", "ntis", "tms", "svar"
+        ])
 
 
 @dataclass
 class DataRegimeConfig:
     mode: str = "full"  # 'full' or 'coding'
     include_macro_interactions: bool = True
+    use_all_macros: bool = True
     ols3_only_mode: bool = False
     ols3_size_col: str = "mvel1"
     ols3_bm_col: str = "bm"

@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
-from pandas import Timestamp
 from pandas.api.types import is_numeric_dtype
 import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
 
 from data_inputs import load_datashare, load_crsp_monthly, load_macro_monthly
 from io_utils import save_parquet
@@ -347,6 +348,72 @@ def summary_stats_extended(
     
     return stats_df
 
+def plot_feature_correlation_heatmap(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    output_path: Optional[str] = None,
+    output_name: Optional[str] = None,
+    max_features: int = 40,
+    title: Optional[str] = None,
+) -> None:
+    """Save a correlation heatmap for the numeric feature columns."""
+    numeric_cols = [
+        c for c in feature_cols
+        if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+    if len(numeric_cols) < 2:
+        logger.warning(
+            "Skipping correlation heatmap: fewer than two numeric feature columns."
+        )
+        return
+
+    if len(numeric_cols) > max_features:
+        logger.warning(
+            f"Correlation heatmap limited to first {max_features} numeric features "
+            f"of {len(numeric_cols)} total."
+        )
+        numeric_cols = numeric_cols[:max_features]
+
+    corr = df[numeric_cols].corr()
+
+    fig, ax = plt.subplots(figsize=(max(10, len(numeric_cols) * 0.45),
+                                    max(8, len(numeric_cols) * 0.40)))
+    sns.heatmap(
+        corr,
+        annot=False,
+        cmap="coolwarm",
+        center=0,
+        vmin=-1,
+        vmax=1,
+        square=True,
+        linewidths=0.3,
+        cbar_kws={"shrink": 0.8},
+        ax=ax,
+    )
+    ax.set_title(title)
+    ax.tick_params(axis="x", rotation=90)
+    ax.tick_params(axis="y", rotation=0)
+    fig.tight_layout()
+
+    # Save to CSV if output_name provided
+    if output_name is not None:
+        # Determine output path
+        if output_path is None:
+            output_dir = Path.cwd()
+        else:
+            output_dir = Path(output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_file = output_dir / f"{output_name}.png"
+        fig.savefig(output_file, dpi=300, bbox_inches="tight")
+
+
+
+    plt.close(fig)
+
+    logger.info(f"Saved correlation heatmap to {output_file}")
+
 
 def build_complete_dataset(
     datashare_path: str,
@@ -414,7 +481,7 @@ def build_complete_dataset(
 
     logger.debug(f"After merge: {len(merged)} rows")
 
-
+    macro_cols = ["d/p", "e/p", "b/m", "ntis", "tbl", "tms", "dfy", "svar"]
     
     # ------------------------------------------------------------------
     # excess_ret_total
