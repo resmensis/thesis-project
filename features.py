@@ -235,8 +235,8 @@ def build_feature_panel(
     """
 
     logger.info(f"Feature panel built: {out.shape}, {len(feature_cols)} feature columns")
-    if regime_config.mode == "coding":
-        save_parquet(out, out_path_panel, enabled=save_feature_panel)
-        save_pickle(feature_cols, out_path_cols, enabled=save_feature_panel)
+    # if regime_config.mode == "coding":
+    save_parquet(out, out_path_panel, enabled=save_feature_panel)
+    save_pickle(feature_cols, out_path_cols, enabled=save_feature_panel)
     
     return out, feature_cols
