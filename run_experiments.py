@@ -25,10 +25,10 @@ from evaluation import evaluate_predictions
 
 def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
-    cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=False)
+    cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
-    run_ctrl_cfg = RunControlConfig(feature_panel_only=True)
-    regime_cfg = DataRegimeConfig(mode="coding", include_macro_interactions=True, use_all_macros=True, ols3_only_mode=False)
+    run_ctrl_cfg = RunControlConfig(feature_panel_only=False)
+    regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=True, use_all_macros=True, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
