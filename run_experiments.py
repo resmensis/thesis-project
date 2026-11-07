@@ -27,7 +27,7 @@ def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
     cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
-    run_ctrl_cfg = RunControlConfig(feature_panel_only=False)
+    run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
     regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=True, use_all_macros=True, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
