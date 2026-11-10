@@ -89,27 +89,18 @@ def build_feature_panel(
     # ------------------------------------------------------------------
     # 1. Create industry dummies 
     # ------------------------------------------------------------------
-    out = create_industry_dummies(df, sic2_column)
+    out = df
 
-    industry_cols = [c for c in out.columns if c.startswith("ind_")]
-    logger.debug(f"Identified {len(cols_chara)} char, {len(cols_macro)} macro, {len(industry_cols)} industry dummies")
+    if regime_config.use_all_macros:
+        logger.debug(f"Identified {len(cols_chara)} char, {len(cols_macro)} macro, industry dummy col: {sic2_column}")
+    else:
+        logger.debug(f"Identified {len(cols_chara)} char, {len(cols_macro_reduced)} macro, industry dummy col: {sic2_column}")
 
 
     # ------------------------------------------------------------------
     # 2. Interactions: Chara x Macro
     # ------------------------------------------------------------------
     if regime_config.mode == "full":
-        if regime_config.include_macro_interactions:
-            if regime_config.use_all_macros:
-                out = create_macro_interactions(out, cols_chara, cols_macro)
-            else:
-                out = create_macro_interactions(out, cols_chara, cols_macro_reduced)
-
-            out = out.drop(columns=cols_macro)
-
-        interaction_cols = [c for c in out.columns if "__x__" in c]
-        feature_cols = cols_chara + interaction_cols + industry_cols
-
         if regime_config.ols3_only_mode:
             cols = [
                 'permno',
@@ -123,6 +114,21 @@ def build_feature_panel(
 
             out = out[cols].copy()
             feature_cols = regime_config.chara_cols_benchmark
+        else:
+            if regime_config.create_industry_dummies:
+                out = create_industry_dummies(df, sic2_column)
+                
+            if regime_config.include_macro_interactions:
+                if regime_config.use_all_macros:
+                    out = create_macro_interactions(out, cols_chara, cols_macro)
+                else:
+                    out = create_macro_interactions(out, cols_chara, cols_macro_reduced)
+
+                out = out.drop(columns=cols_macro)
+
+            industry_cols = [c for c in out.columns if c.startswith("ind_")]
+            interaction_cols = [c for c in out.columns if "__x__" in c]
+            feature_cols = cols_chara + interaction_cols + industry_cols
 
 
         summary_stats_extended(

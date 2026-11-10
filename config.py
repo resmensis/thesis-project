@@ -75,6 +75,7 @@ class DataFilesConfig:
 @dataclass
 class DataRegimeConfig:
     mode: str = "full"  # 'full' or 'coding'
+    include_industry_dummies: bool = True
     include_macro_interactions: bool = True
     use_all_macros: bool = True
     ols3_only_mode: bool = False
@@ -110,12 +111,16 @@ class HyperGridConfig:
         "max_iter": [500, 1000],
     })
 
+    pcr_coding: Dict = field(default_factory=lambda: {
+        "pca__n_components": [3, 5, 10],
+    })
+
     pcr_base: Dict = field(default_factory=lambda: {
-        "pca__n_components": [3, 5, 10, 20, 30, 50, 70, 90, 100],
+        "pca__n_components": [3, 5, 10, 20, 30, 50, 70, 90],
     }) # 
 
     pcr_extended: Dict = field(default_factory=lambda: {
-        "pca__n_components": [3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 90, 100],
+        "pca__n_components": [3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 90],
     })
 
     pls_base: Dict = field(default_factory=lambda: {

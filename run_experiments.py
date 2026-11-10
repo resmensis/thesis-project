@@ -28,7 +28,7 @@ def main():
     cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
     run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
-    regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
+    regime_cfg = DataRegimeConfig(mode="coding", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
@@ -76,9 +76,20 @@ def main():
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
     descriptives_path=cache_cfg.descriptives_dir
 
-    if regime_cfg.mode == "full" and not regime_cfg.use_all_macros:
-        feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}_reduced.parquet"
-        feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}_reduced.pkl"
+    industry_suffix = "wDummies" if regime_cfg.include_industry_dummies else "noDummies"
+
+    if not regime_cfg.include_macro_interactions:
+        macro_suffix = "noInter"
+    elif regime_cfg.use_all_macros:
+        macro_suffix = "allInter"
+    else:
+        macro_suffix = "redInter"
+
+    feature_suffix = "ol3_only_mode" if regime_cfg.ols3_only_mode else f"{industry_suffix}_{macro_suffix}"
+
+    if regime_cfg.mode == "full":
+        feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}_{feature_suffix}.parquet"
+        feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}_{feature_suffix}.pkl"
     else:
         feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
         feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"

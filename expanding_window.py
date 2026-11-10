@@ -15,6 +15,43 @@ from io_utils import ensure_dir, save_parquet, maybe_load_parquet, save_pickle, 
 logger = logging.getLogger("eap_ml.expanding_window")
 
 
+def iter_yearly_splits(
+    df: pd.DataFrame,
+    config: ExpandingWindowConfig,
+    test_end_year: int,
+):
+    dates = df["date"].to_numpy()
+    date_index = pd.DatetimeIndex(dates)
+
+    for year in range(config.test_start_year, test_end_year + 1):
+        offset = year - config.test_start_year
+        train_end_year = config.initial_train_end_year + offset
+        val_end_year = config.val_end_year + offset
+        val_start_year = val_end_year - 11
+
+        train_end = pd.Timestamp(f"{train_end_year}-12-31")
+        val_start = pd.Timestamp(f"{val_start_year}-01-01")
+        val_end = pd.Timestamp(f"{val_end_year}-12-31")
+        test_start = pd.Timestamp(f"{year}-01-01")
+        test_end = pd.Timestamp(f"{year}-12-31")
+
+        train_mask = date_index <= train_end
+        val_mask = (date_index >= val_start) & (date_index <= val_end)
+        test_mask = (date_index >= test_start) & (date_index <= test_end)
+
+        if not train_mask.any() or not val_mask.any() or not test_mask.any():
+            continue
+
+        yield {
+            "year": year,
+            "train_df": df.loc[train_mask],
+            "val_df": df.loc[val_mask],
+            "test_df": df.loc[test_mask],
+            "train_end": str(train_end.date()),
+            "val_end": str(val_end.date()),
+        }
+
+
 def save_best_params_by_model(
     tuning_results: Dict[str, Dict[str, Any]],
     year: int,
@@ -223,14 +260,10 @@ def train_models_for_year(
     """
     logger.info(f"Year {year}: Training models on {len(train_df)} samples")
     
-    X_train = train_df[feature_cols].fillna(0.0)
+    X_train = train_df[feature_cols]
     y_train = train_df["excess_ret_total"]
-    X_val = val_df[feature_cols].fillna(0.0)
+    X_val = val_df[feature_cols]
     y_val = val_df["excess_ret_total"]
-    
-    # Copy for scaling if needed
-    X_train_s = X_train.copy()
-    X_val_s = X_val.copy()
     
     models = {}
     feature_importances = {}
@@ -246,11 +279,11 @@ def train_models_for_year(
         run_all = False
     
     # Benchmark: OLS-3 with 3 factors (Gu et al. 2020 use Huber, not LinearRegression)
-    benchmark_features = [c for c in regime_config.chara_cols_benchmark if c in X_train_s.columns]
+    benchmark_features = [c for c in regime_config.chara_cols_benchmark if c in X_train.columns]
     if len(benchmark_features) == 3:
         if run_all or "OLS_3" in (models_to_run or []):
             logger.debug(f"Training OLS_3 (custom Huber) with features: {benchmark_features}")
-            models["OLS_3"] = fit_custom_huber(X_train_s[benchmark_features], y_train)
+            models["OLS_3"] = fit_custom_huber(X_train[benchmark_features], y_train)
 
         if run_all or "OLS_3_old" in (models_to_run or []):
                     huber_grid = (
@@ -260,9 +293,9 @@ def train_models_for_year(
                     )
                     logger.debug(f"Training OLS_3 (Huber) with features: {benchmark_features}")
                     huber_result = tune_huber_regression(
-                        X_train=X_train_s[benchmark_features],
+                        X_train=X_train[benchmark_features],
                         y_train=y_train,
-                        X_val=X_val_s[benchmark_features],
+                        X_val=X_val[benchmark_features],
                         y_val=y_val,
                         param_grid=huber_grid,
                     )
@@ -272,7 +305,7 @@ def train_models_for_year(
     if run_all or "OLS_full" in (models_to_run or []):
         # OLS-full: HuberRegressor with all features (Gu et al. 2020)
         logger.debug("Training OLS_full (custom Huber) with all features")
-        models["OLS_full"] = fit_custom_huber(X_train_s, y_train)
+        models["OLS_full"] = fit_custom_huber(X_train, y_train)
 
     """
     if run_all or "OLS_full_old" in (models_to_run or []):
@@ -284,9 +317,9 @@ def train_models_for_year(
         )
         logger.debug("Training OLS_full (Huber) with all features")
         models["OLS_full_old"] = tune_huber_regression(
-            X_train=X_train_s,
+            X_train=X_train,
             y_train=y_train,
-            X_val=X_val_s,
+            X_val=X_val,
             y_val=y_val,
             param_grid=huber_grid,
         )["model"]
@@ -295,15 +328,18 @@ def train_models_for_year(
     if run_all or "PCR_Huber" in (models_to_run or []):
         # PCR_Huber: PCA + HuberLinearRegressor
         pcr_grid = (
-            grid_config.pcr_extended
-            if grid_config.use_extended_grids
-            else grid_config.pcr_base
+            if regime_config.mode == "coding":
+                pcr_grid = grid_config.pcr_coding
+            elif grid_config.use_extended_grids:
+                pcr_grid = grid_config.pcr_extended
+            else:
+                pcr_grid = grid_config.pcr_base
         )
         logger.debug("Training PCR_Huber")
         pcr_huber_result = tune_pcr_huber(
-            X_train=X_train_s,
+            X_train=X_train,
             y_train=y_train,
-            X_val=X_val_s,
+            X_val=X_val,
             y_val=y_val,
             random_state=repro_config.random_state,
             param_grid=pcr_grid,
@@ -315,15 +351,18 @@ def train_models_for_year(
     if run_all or "PCR_Linear" in (models_to_run or []):
         # PCR_Linear: PCA + HuberLinearRegressor
         pcr_grid = (
-            grid_config.pcr_extended
-            if grid_config.use_extended_grids
-            else grid_config.pcr_base
+            if regime_config.mode == "coding":
+                pcr_grid = grid_config.pcr_coding
+            elif grid_config.use_extended_grids:
+                pcr_grid = grid_config.pcr_extended
+            else:
+                pcr_grid = grid_config.pcr_base
         )
         logger.debug("Training PCR_Linear")
         pcr_linear_result = tune_pcr_linear(
-            X_train=X_train_s,
+            X_train=X_train,
             y_train=y_train,
-            X_val=X_val_s,
+            X_val=X_val,
             y_val=y_val,
             random_state=repro_config.random_state,
             param_grid=pcr_grid,
@@ -340,9 +379,9 @@ def train_models_for_year(
         )
         logger.debug("Training PLS")
         pls_result = tune_pls(
-            X_train=X_train_s,
+            X_train=X_train,
             y_train=y_train,
-            X_val=X_val_s,
+            X_val=X_val,
             y_val=y_val,
             param_grid=pls_grid,
         )
@@ -358,9 +397,9 @@ def train_models_for_year(
         )
         logger.debug("Training LinearSVR")
         linear_svr_result = tune_linear_svr(
-            X_train=X_train_s,
+            X_train=X_train,
             y_train=y_train,
-            X_val=X_val_s,
+            X_val=X_val,
             y_val=y_val,
             param_grid=linear_svr_grid,
         )
@@ -434,9 +473,9 @@ def train_models_for_year(
         )
 
         mlp_results = tune_mlp_models(
-            X_train=X_train_s,
+            X_train=X_train,
             y_train=y_train,
-            X_val=X_val_s,
+            X_val=X_val,
             y_val=y_val,
             architectures=selected_architectures,
             param_grid=mlp_grid,
@@ -573,15 +612,18 @@ def run_expanding_window(
 
     test_end_year = expand_config.test_end_year_extended
 
+    """
     yearly_splits = get_yearly_splits(
         df=feature_panel,
         config=expand_config,
         test_end_year=test_end_year,
-    )
+    )    
 
     if len(yearly_splits) == 0:
         logger.error("No valid yearly splits generated. Check data availability.")
         return pd.DataFrame()
+    """
+
 
     outdir = Path(output_dir) / window_name
     ensure_dir(outdir)
@@ -595,13 +637,20 @@ def run_expanding_window(
     ensure_dir(best_params_dir)
 
     # Initialize or load the cumulative wide prediction store.
+    """
     first_test_df = yearly_splits[0]["test_df"]
     prediction_store = load_or_initialize_prediction_store(
         prediction_path=all_predictions_path,
         test_df=first_test_df,
-    )
+    )    
+    """
+    prediction_store = None
 
-    for split in yearly_splits:
+    for split in iter_yearly_splits(
+        df=feature_panel,
+        config=expand_config,
+        test_end_year=test_end_year,
+    ):
         year = split["year"]
         train_df = split["train_df"]
         val_df = split["val_df"]
@@ -650,6 +699,12 @@ def run_expanding_window(
             regime_config=regime_config,
             year=year,
         )
+
+        if prediction_store is None:
+            prediction_store = load_or_initialize_prediction_store(
+                prediction_path=all_predictions_path,
+                test_df=test_df,
+            )
 
         # Add this year's stock-months to the cumulative store if needed.
         prediction_store = pd.concat(
