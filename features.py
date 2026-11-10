@@ -115,7 +115,7 @@ def build_feature_panel(
             out = out[cols].copy()
             feature_cols = regime_config.chara_cols_benchmark
         else:
-            if regime_config.create_industry_dummies:
+            if regime_config.include_industry_dummies:
                 out = create_industry_dummies(df, sic2_column)
                 
             if regime_config.include_macro_interactions:
