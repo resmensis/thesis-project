@@ -327,14 +327,12 @@ def train_models_for_year(
 
     if run_all or "PCR_Huber" in (models_to_run or []):
         # PCR_Huber: PCA + HuberLinearRegressor
-        pcr_grid = (
-            if regime_config.mode == "coding":
-                pcr_grid = grid_config.pcr_coding
-            elif grid_config.use_extended_grids:
-                pcr_grid = grid_config.pcr_extended
-            else:
-                pcr_grid = grid_config.pcr_base
-        )
+        if regime_config.mode == "coding":
+            pcr_grid = grid_config.pcr_coding
+        elif grid_config.use_extended_grids:
+            pcr_grid = grid_config.pcr_extended
+        else:
+            pcr_grid = grid_config.pcr_base
         logger.debug("Training PCR_Huber")
         pcr_huber_result = tune_pcr_huber(
             X_train=X_train,
@@ -350,14 +348,12 @@ def train_models_for_year(
 
     if run_all or "PCR_Linear" in (models_to_run or []):
         # PCR_Linear: PCA + HuberLinearRegressor
-        pcr_grid = (
-            if regime_config.mode == "coding":
-                pcr_grid = grid_config.pcr_coding
-            elif grid_config.use_extended_grids:
-                pcr_grid = grid_config.pcr_extended
-            else:
-                pcr_grid = grid_config.pcr_base
-        )
+        if regime_config.mode == "coding":
+            pcr_grid = grid_config.pcr_coding
+        elif grid_config.use_extended_grids:
+            pcr_grid = grid_config.pcr_extended
+        else:
+            pcr_grid = grid_config.pcr_base
         logger.debug("Training PCR_Linear")
         pcr_linear_result = tune_pcr_linear(
             X_train=X_train,
