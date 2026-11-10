@@ -27,8 +27,8 @@ def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
     cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
-    run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
-    regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=True, use_all_macros=True, ols3_only_mode=False)
+    run_ctrl_cfg = RunControlConfig(feature_panel_only=True) 
+    regime_cfg = DataRegimeConfig(mode="full", include_macro_interactions=True, use_all_macros=False, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
@@ -76,8 +76,13 @@ def main():
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
     descriptives_path=cache_cfg.descriptives_dir
 
-    feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
-    feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
+    if regime_cfg.mode == "full" and not regime_cfg.use_all_macros:
+        feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}_reduced.parquet"
+        feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}_reduced.pkl"
+    else:
+        feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}.parquet"
+        feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
+
 
     predictions_path = f"output/{regime_cfg.mode}/all_predictions.parquet"
 
