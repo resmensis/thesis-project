@@ -15,6 +15,25 @@ from io_utils import ensure_dir, save_parquet, maybe_load_parquet, save_pickle, 
 logger = logging.getLogger("eap_ml.expanding_window")
 
 
+def yearly_outputs_exist(
+    output_dir: Path,
+    year: int,
+) -> bool:
+    """
+    Check whether both the yearly prediction file and fitted-model file exist.
+
+    This is a lightweight checkpoint check. It does not validate the contents
+    of the files, but it prevents rerunning a year whose outputs were already
+    written.
+    """
+    predictions_path = (
+        output_dir / "predictions" / f"predictions_year_{year}.parquet"
+    )
+    models_path = output_dir / "models" / f"models_year_{year}.pkl"
+
+    return predictions_path.exists() and models_path.exists()
+
+
 def iter_yearly_splits(
     df: pd.DataFrame,
     config: ExpandingWindowConfig,
@@ -155,7 +174,7 @@ def get_yearly_splits(
 
 def load_or_initialize_prediction_store(
     prediction_path: Path,
-    test_df: pd.DataFrame,
+    test_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Load an existing wide prediction store or initialize a new one.
@@ -167,6 +186,7 @@ def load_or_initialize_prediction_store(
     if existing is not None:
         required = ["permno", "date", "excess_ret_total", "mv"]
         missing = [c for c in required if c not in existing.columns]
+
         if missing:
             raise KeyError(
                 f"Existing prediction store is missing columns: {missing}"
@@ -180,6 +200,12 @@ def load_or_initialize_prediction_store(
             )
 
         return existing
+
+    if test_df is None:
+        raise ValueError(
+            "Cannot initialize prediction store: no existing store found "
+            "and no test_df was provided."
+        )
 
     return test_df[["permno", "date", "excess_ret_total", "mv"]].copy()
 
@@ -642,6 +668,11 @@ def run_expanding_window(
     """
     prediction_store = None
 
+    if all_predictions_path.exists():
+        prediction_store = load_or_initialize_prediction_store(
+            prediction_path=all_predictions_path,
+        )
+
     for split in iter_yearly_splits(
         df=feature_panel,
         config=expand_config,
@@ -653,6 +684,13 @@ def run_expanding_window(
         test_df = split["test_df"]
         train_end = split["train_end"]
         val_end = split["val_end"]
+
+        if yearly_outputs_exist(outdir, year) and not cache_config.force_refit_models:
+            logger.info(
+                f"Year {year}: prediction and model files already exist; skipping."
+            )
+            continue
+
 
         logger.info(
             f"Year {year}: training {train_df['date'].min()} to {train_end}, "
