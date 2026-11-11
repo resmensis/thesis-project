@@ -221,7 +221,7 @@ def main():
         repro_config=repro_cfg,
         cache_config=cache_cfg,
         expand_config=expand_cfg,
-        window_name=regime_cfg.mode,
+        window_name=regime_cfg.mode if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}",
         output_dir="output",
         models_to_run=models_to_run,  # Determined by ModelSelectionConfig
     )
