@@ -97,9 +97,9 @@ def main():
     grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
     model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-    predictions_path = f"output/{regime_cfg.mode}/all_predictions.parquet" if regime_cfg.mode=="coding" else f"output/{regime_cfg.mode}/{feature_suffix}/all_predictions.parquet"
-
-
+    predictions_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
+    predictions_path = f"output/{predictions_window_path}/all_predictions.parquet" 
+    
 
     if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
         cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
@@ -224,7 +224,7 @@ def main():
         repro_config=repro_cfg,
         cache_config=cache_cfg,
         expand_config=expand_cfg,
-        window_name=f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}",
+        window_name=predictions_window_path,
         output_dir="output",
         models_to_run=models_to_run,  # Determined by ModelSelectionConfig
     )
@@ -246,7 +246,7 @@ def main():
         dm_loss="squared_error",
         horizon=1,
         save_outputs=True,
-        feature_importance_dir=f"output/{regime_cfg.mode}/feature_importance",
+        feature_importance_dir=f"output/{predictions_window_path}/feature_importance" ,
     )
 
 
