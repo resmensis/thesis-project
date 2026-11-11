@@ -47,7 +47,7 @@ def tune_random_forest(
 
     grid = GridSearchCV(
         estimator=RandomForestRegressor(
-            n_jobs=1,
+            n_jobs=-1,
             random_state=random_state,
         ),
         param_grid=param_grid,

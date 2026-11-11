@@ -134,19 +134,19 @@ class HyperGridConfig:
     linear_svr_base: Dict = field(default_factory=lambda: {
         "epsilon": [0.0, 0.001, 0.01],
         "C": [0.01, 0.1, 1.0],
-        "max_iter": [5000],
+        "max_iter": [3500],
     })
 
     linear_svr_extended: Dict = field(default_factory=lambda: {
         "epsilon": [0.0, 0.0001, 0.001, 0.01, 0.1],
         "C": [0.001, 0.01, 0.1, 1.0, 10.0],
-        "max_iter": [5000, 10000],
+        "max_iter": [5000],
     })
 
     rf_base: Dict = field(default_factory=lambda: {
-        "n_estimators": [300],
-        "max_depth": [1, 2, 3, 4, 5, 6],
-        "max_features": [3, 5, 10, 20, 30, 50],
+        "n_estimators": [150],
+        "max_depth": [1, 2, 3, 4, 5],
+        "max_features": [3, 5, 10],
     })
 
     rf_extended: Dict = field(default_factory=lambda: {
@@ -156,15 +156,17 @@ class HyperGridConfig:
     })
 
     gbrt_base: Dict = field(default_factory=lambda: {
-        "n_estimators": [25, 50, 100, 200, 500, 1000],
+        "n_estimators": [25, 50, 75],
         "learning_rate": [0.01, 0.1],
         "max_depth": [1, 2],
+        "max_features": [3, 5, 10, 20, 30],
     })
 
     gbrt_extended: Dict = field(default_factory=lambda: {
         "n_estimators": [25, 50, 100, 200, 500, 1000],
         "learning_rate": [0.005, 0.01, 0.05, 0.1],
         "max_depth": [1, 2, 3, 4],
+        "max_features": ["sqrt", "log2", 3, 5, 10, 20, 30, 50],
     })
 
     mlp_architectures: Dict = field(default_factory=lambda: {
