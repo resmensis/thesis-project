@@ -308,6 +308,7 @@ def tune_linear_svr(
     y_train,
     X_val,
     y_val,
+    random_state,
     param_grid: dict,
 ):
     """
@@ -335,7 +336,7 @@ def tune_linear_svr(
     splitter = PredefinedSplit(test_fold=test_fold)
 
     grid = GridSearchCV(
-        estimator=LinearSVR(),
+        estimator=LinearSVR(random_state=random_state),
         param_grid=param_grid,
         scoring=gu_pred_r2_scorer,
         cv=splitter,

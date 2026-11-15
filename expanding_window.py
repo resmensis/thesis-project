@@ -423,6 +423,7 @@ def train_models_for_year(
             y_train=y_train,
             X_val=X_val,
             y_val=y_val,
+            random_state=repro_config.random_state,
             param_grid=linear_svr_grid,
         )
         models["LinearSVR"] = linear_svr_result["model"]
