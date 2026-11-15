@@ -1,280 +1,230 @@
 # Thesis Project: Asset Pricing with Machine Learning
 
-A replication of Gu, Kelly, and Xiu (2020) - "Empirical Asset Pricing via Machine Learning"
+A replication of Gu, Kelly, and Xiu (2020), *“Empirical Asset Pricing via Machine Learning.”*
+
+This repository implements an expanding-window forecasting framework for U.S. equity returns using linear, tree-based, and neural-network models. It follows the paper’s methodology while providing a modular codebase for experimentation, validation, and reproducible research.
 
 ## Overview
 
-This project implements an expanding window forecasting framework for asset pricing using various machine learning algorithms. The code replicates the methodology from the seminal paper while providing flexibility for experimentation.
+The pipeline constructs a monthly stock-characteristic panel, engineers features, trains models in an expanding-window setting, generates out-of-sample return forecasts, and evaluates predictive performance and portfolio strategies.
 
-## Key Features
+Key components include:
 
-- **Expanding Window Forecasting**: Annual model refitting with expanding training windows
-- **Gu et al. (2020) Models**: All models use HuberRegressor as specified in the paper
-- **Complete Model Ensemble**: OLS, PCR, PLS, GBRT, Random Forest, MLP, **LSTM**
-- **Feature Engineering**: 94 stock characteristics, industry dummies, macro interactions
-- **Cross-Sectional Scaling**: Quantile-based normalization of characteristics
-- **Caching**: Parquet-based caching for datasets and feature panels
-- **Comprehensive Logging**: Detailed logging with per-module identification
+- Expanding-window training with annual model refitting
+- Gu et al. (2020)-style linear models based on `HuberRegressor`
+- PCR, PLS, GBRT, random forests, MLPs, and LSTM models
+- 94 stock characteristics, industry indicators, and macroeconomic interactions
+- Cross-sectional feature scaling and missing-value handling
+- Parquet-based caching for datasets and feature panels
+- Module-level logging and reproducibility controls
+
+## Repository Structure
+
+```text
+thesis-project/
+├── config.py                        # Configuration dataclasses and experiment settings
+├── data_inputs.py                   # Data loading and input validation
+├── dataset_builder.py               # Dataset construction, merging, and imputation
+├── features.py                      # Feature engineering and scaling
+├── transformers.py                  # Custom grouped transformers and preprocessing utilities
+├── models_huber.py                  # Huber-regression implementations
+├── models_linear.py                 # Linear models, including PCR and PLS
+├── models_trees.py                  # GBRT and random-forest models
+├── models_mlp.py                    # Multi-layer perceptron models
+├── models_alternative.py            # Additional or experimental model implementations
+├── models_lstm.txt                  # LSTM implementation notes/reference
+├── evaluation.py                    # Forecast evaluation and portfolio metrics
+├── expanding_window.py              # Expanding-window forecasting workflow
+├── run_experiments.py               # Main experiment entry point
+├── io_utils.py                      # Input/output utilities and logging
+├── visualization.py                 # Plotting and result visualization
+├── replication.ipynb                # Replication workflow notebook
+├── dataset_builder_book.ipynb       # Dataset-construction exploration notebook
+├── test_*.py                        # Unit and integration tests
+├── descriptives/                    # Descriptive statistics and related outputs
+├── output/                          # Experiment results and generated artifacts
+└── README.md                        # This file
+```
 
 ## Installation
 
-### Prerequisites
+### Requirements
 
-- Python 3.9+
-- pip or conda
+- Python 3.9 or later
+- `pip` or `conda`
 
-### Install Dependencies
+### Install dependencies
 
 ```bash
-# Core dependencies
-pip install pandas numpy scikit-learn matplotlib torch scipy torch seaborn 
+pip install pandas numpy scipy scikit-learn matplotlib seaborn torch pyarrow
+```
 
-# Parquet support (REQUIRED)
-pip install pyarrow
+`pyarrow` is required for Parquet-based caching. `fastparquet` can be used as an alternative:
 
-# Optional: fastparquet alternative
+```bash
 pip install fastparquet
-```
-
-## Project Structure
-
-```
-thesis-project/
-├── config.py              # Configuration dataclasses (including ModelSelectionConfig)
-├── data_inputs.py         # Data loading functions
-├── dataset_builder.py     # Dataset construction and imputation
-├── features.py            # Feature engineering and scaling
-├── models_linear.py       # Linear models (HuberRegressor, PCR, PLS)
-├── models_trees.py        # Tree models (GBRT, Random Forest)
-├── models_mlp.py          # Neural networks (MLP)
-├── models_lstm.py         # LSTM models
-├── evaluation.py          # Evaluation metrics
-├── expanding_window.py    # Expanding window logic
-├── run_experiments.py     # Main entry point
-├── io_utils.py            # I/O utilities and logging
-└── README.md              # This file
 ```
 
 ## Usage
 
-### Quick Start
+### Run the full experiment
 
 ```bash
-# Run the full experiment (all models including LSTM, 1987-2021)
 python run_experiments.py
 ```
 
-### Configuration
+By default, this runs the expanding-window experiment over the configured forecast period and produces predictions, evaluation metrics, and model artifacts.
 
-Edit `config.py` to customize:
+### Configure the experiment
 
-- **DataRegimeConfig**: `mode="full"` or `mode="coding"`
-- **ExpandingWindowConfig**: Time periods and refitting frequency
-- **ModelSelectionConfig**: Which models to run
-- **CacheConfig**: Enable/disable caching
-- **HyperGridConfig**: Hyperparameter grids for model tuning
+Edit `config.py` to control:
 
-### Model Selection
+- `DataRegimeConfig`: full-data or coding-mode data regime
+- `ExpandingWindowConfig`: training, validation, and forecast periods
+- `ModelSelectionConfig`: models included in the experiment
+- `CacheConfig`: caching behavior
+- `HyperGridConfig`: hyperparameter search grids
 
-Control which models to run in `config.py`:
+### Select models
 
 ```python
-# Run all models (including LSTM) - default
+# Run all configured models
 run_all_models = True
 models_to_run = None
 
-# Run only OLS-3 benchmark (fastest)
+# Run only the OLS-3 benchmark
 run_all_models = False
 models_to_run = ["OLS_3"]
 
-# Run custom subset
+# Run a custom subset
 run_all_models = False
 models_to_run = ["OLS_3", "GBRT", "MLP"]
 ```
 
-### Running Modes
+### Data regimes
 
-#### Full Mode (Default)
-- Uses all 94 characteristics
-- Creates all macro interactions (94 × 8 = 752 interaction terms)
-- Full industry dummies (up to 74)
+| Mode | Description |
+|---|---|
+| `full` | Uses the complete characteristic set, industry indicators, and macroeconomic interactions. |
+| `coding` | Uses a reduced sample and feature set for faster development and debugging. |
 
-#### Coding Mode
-- Subsampled data (500 stocks/month by default)
-- Reduced feature set for faster iteration
-- Limited macro interactions (12 by default)
-
-Change mode in `config.py`:
 ```python
 regime_cfg = DataRegimeConfig(mode="coding")
 ```
 
 ## Data Requirements
 
-### Input Files
+Place the following input files in the `data/` directory:
 
-Place these files in the `data/` directory:
+1. **`datashare.csv`** — 94 stock characteristics
+   - `permno`: CRSP permanent security identifier
+   - `date`: monthly observation date
+   - Columns 3–96: the 94 characteristics
+   - `sic2`: two-digit SIC industry code
 
-1. **datashare.csv**: 94 stock characteristics
-   - Column 1: `permno` (stock identifier)
-   - Column 2: `date`
-   - Columns 3-96: 94 characteristics
-   - Column 97: `sic2` (2-digit SIC code)
+2. **`crsp_monthly.csv`** — CRSP monthly returns
+   - Required columns: `permno`, `date`, `ret`, and `dlret`
 
-2. **crsp_monthly.csv**: CRSP monthly returns
-   - Required columns: `permno`, `date`, `ret`, `dlret`
+3. **`Data2024_monthly_goyal.csv`** — Goyal-Welch macroeconomic predictors
 
-3. **Data2024_monthly_goyal.csv**: Macro predictors
-   - Standard Goyal and Welch predictors
+The pipeline supports mixed monthly date formats, including `YYYYMM` and standard date strings.
 
-### Data Format
+## Expanding-Window Methodology
 
-All dates should be in monthly format (YYYYMM or date strings). The code handles mixed date formats automatically.
+For each forecast year, the training window expands by one year, while the validation window rolls forward. The model is refit annually and used to produce forecasts for the following 12 months.
 
-## Expanding Window Methodology
-
-### Timeline
-
-```
-Training:  1957───────────────────────────────────────────→ (expands yearly)
-Validation:          1975────────────────────────────→ (rolls forward, 12 years)
-Test:                    1987 1988 1989 ... 2016 ... 2021 (forecast yearly)
+```text
+Training:   1957 ─────────────────────────────────→ expands annually
+Validation:       1975 ────────────────────────→ rolls forward, 12 years
+Forecast:              1987 1988 1989 ... 2021
 ```
 
-### Annual Refitting Process
+For a forecast year \(Y\):
 
-For each forecast year Y (1987 to 2021):
+1. Train on data from 1957 through \(1974 + (Y - 1987)\).
+2. Validate on the preceding 12 years ending in \(1986 + (Y - 1987)\).
+3. Generate monthly forecasts for all stocks in year \(Y\).
+4. Evaluate forecasts and refit the model for the next year.
 
-1. **Training Period**: 1957 to (1974 + Y - 1987)
-   - Example: For Y=1987, train on 1957-1974 (18 years)
-   - Example: For Y=1988, train on 1957-1975 (19 years)
-   - Expands by 1 year each iteration
+The implementation supports the original 1987–2016 forecast period as well as the extended 1987–2021 period.
 
-2. **Validation Period**: 12 years ending at (1986 + Y - 1987)
-   - Example: For Y=1987, validate on 1975-1986
-   - Example: For Y=1988, validate on 1976-1987
-   - Rolls forward, always 12 years
+## Models
 
-3. **Forecast Period**: 12 months of year Y
-   - Generate predictions for all stocks
-   - Evaluate performance
+### Linear models
 
-4. **Refit**: Increment year and repeat
+Following Gu et al. (2020), the linear benchmark models use robust Huber regression rather than ordinary least squares.
 
-### Timeframes
+- `OLS_3`: Huber regression with size, value, and momentum factors
+- `OLS_full`: Huber regression with the full feature set
+- `Huber`: Huber regression with tuned regularization and robustness parameters
+- `PCR`: Principal-component regression
+- `PLS`: Partial least-squares regression
 
-- **Original**: 1987-2016 (30 years)
-- **Extended**: 1987-2021 (35 years)
+### Tree-based models
 
-The code runs continuously from 1987-2021 and saves intermediate evaluations at 2016.
+- `GBRT`: Gradient-boosted regression trees
+- `RandomForest`: Random forest
 
-## Output
+### Neural networks
 
-### Directory Structure
-
-```
-output/
-└── unified/
-    ├── all_predictions.parquet      # All predictions 1987-2021
-    ├── metrics_by_year.csv          # Full metrics (1987-2021)
-    ├── metrics_by_year_original.csv # Intermediate metrics (1987-2016)
-    ├── predictions_year_1987.parquet
-    ├── predictions_year_1988.parquet
-    ├── ...
-    ├── models_year_1987.pkl
-    ├── models_year_1988.pkl
-    └── ...
-```
-
-### Metrics
-
-For each model and year:
-
-- `stock_r2`: Stock-level predictive R2
-- `portfolio_r2`: Portfolio-level predictive R2
-- `timing_sharpe`: Market timing strategy Sharpe ratio
-
-### Cache
-
-```
-cache/
-├── complete_dataset.parquet              # Merged dataset
-├── complete_dataset_missingness_before.jpg  # Missingness visualization
-├── complete_dataset_missingness_after.jpg   # After imputation
-├── complete_dataset_missingness_comparison.jpg  # Before vs after
-├── feature_panel_full.parquet          # Feature panel (full mode)
-├── feature_panel_coding.parquet        # Feature panel (coding mode)
-├── feature_cols_full.pkl               # Feature column names
-└── feature_cols_coding.pkl
-```
-
-## Models (Gu et al. 2020 Specifications)
-
-### Linear Models (All use HuberRegressor)
-
-**Important:** Gu et al. (2020) use Huber robust regression for all "OLS" models, not standard OLS.
-
-- **OLS_3**: HuberRegressor with 3 factors (size, value, momentum) - benchmark model
-- **OLS_full**: HuberRegressor with all features
-- **Huber**: HuberRegressor with tuned hyperparameters (epsilon, alpha)
-- **PCR**: Principal Component Regression (PCA + HuberRegressor)
-- **PLS**: Partial Least Squares regression
-
-### Tree Models
-
-- **GBRT**: Gradient Boosted Regression Trees
-- **RandomForest**: Random Forest
-
-### Neural Networks
-
-- **MLP**: Multi-Layer Perceptron (feedforward neural network)
-- **LSTM**: Long Short-Term Memory (recurrent neural network, runs only when `run_all_models=True`)
+- `MLP`: Multi-layer perceptron
+- `LSTM`: Long short-term memory network; available when all models are selected
 
 ## Feature Engineering
 
-### Preprocessing Steps
+The preprocessing workflow includes:
 
-1. **Winsorization**: 1st and 99th percentiles by month
-2. **Cross-Sectional Scaling**: QuantileTransformer to [-1, 1] (only 94 characteristics)
-3. **Industry Dummies**: Top 74 SIC2 industries
-4. **Macro Interactions**: Characteristic × macro variable
+1. Monthly winsorization at the 1st and 99th percentiles
+2. Cross-sectional quantile scaling of the 94 characteristics to the interval \([-1, 1]\)
+3. Industry indicators for the leading SIC2 industries
+4. Interactions between characteristics and macroeconomic variables
 
-### Feature Sets
+In full mode, the feature set includes 94 characteristics, macroeconomic variables, industry indicators, and characteristic-by-macro interactions. Macro variables are not included as standalone features, consistent with the original paper’s setup.
 
-- **Full Mode**: 94 characteristics + 8 macro + 74 industry + 752 interactions = ~928 features
-- **Coding Mode**: Reduced subset (configurable)
+## Outputs
 
-### Important Notes
+Experiment results are written to `output/unified/`:
 
-- **Macro variables are NOT included in feature_cols** (removed to follow original paper)
-- **Only the 94 characteristics are scaled** to [-1, 1]
-- **Macro interactions are created AFTER scaling**
+```text
+output/unified/
+├── all_predictions.parquet
+├── metrics_by_year.csv
+├── metrics_by_year_original.csv
+├── predictions_year_<year>.parquet
+└── models_year_<year>.pkl
+```
+
+For each model and forecast year, the evaluation includes:
+
+- Stock-level predictive \(R^2\)
+- Portfolio-level predictive \(R^2\)
+- Market-timing Sharpe ratio
+
+## Caching
+
+Cached datasets, feature panels, and feature-name mappings are stored under `cache/`. Caching reduces repeated preprocessing and helps ensure consistent results across runs.
 
 ## Logging
 
-Logs are saved to `logs/eap_ml_{mode}_{timestamp}.log` with:
+Logs are saved as:
 
-- Timestamp
-- Log level (INFO/DEBUG)
-- Module name (e.g., `eap_ml.dataset_builder`, `eap_ml.models_linear`)
-- Message
+```text
+logs/eap_ml_<mode>_<timestamp>.log
+```
 
-### Log Levels
-
-- **INFO**: Major milestones, dataset shapes, model performance
-- **DEBUG**: Detailed operations, parameter values, intermediate steps
+Logs include timestamps, log levels, module names, dataset dimensions, model settings, and major pipeline milestones.
 
 ## Reproducibility
 
-- **Random Seed**: Set globally to 42 at the start
-- **Torch Deterministic**: Enabled by default
-- **Caching**: Ensures identical results across runs
-- **Unified Timeframe**: Runs 1987-2021 continuously (not separate runs)
+- A global random seed is set at the start of the experiment.
+- Deterministic PyTorch settings are enabled by default.
+- Caching supports consistent preprocessing across runs.
+- The full experiment runs continuously across the configured forecast period.
 
 ## Citation
 
-Gu, S., Kelly, B., & Xiu, D. (2020). Empirical Asset Pricing via Machine Learning. *The Review of Financial Studies*, 33(5), 2223-2273.
+Gu, S., Kelly, B., & Xiu, D. (2020). Empirical Asset Pricing via Machine Learning. *The Review of Financial Studies*, 33(5), 2223–2273.
 
 ## License
 
-This project is for academic research purposes.
+This project is intended for academic research purposes.
