@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 
 @dataclass
@@ -74,7 +74,7 @@ class DataFilesConfig:
 
 @dataclass
 class DataRegimeConfig:
-    mode: str = "full"  # 'full' or 'coding'
+    mode: Literal['full', 'coding'] = "full"
     include_industry_dummies: bool = True
     include_macro_interactions: bool = True
     use_all_macros: bool = True
@@ -272,8 +272,9 @@ class LoggingConfig:
 
 
 @dataclass
-class ExpandingWindowConfig:
+class WindowConfig:
     """Configuration for expanding window forecasting with annual refitting."""
+    window_type: Literal['expanding', 'rolling'] = "expanding"
     train_start_year: int = 1957
     initial_train_end_year: int = 1974
     val_start_year: int = 1975
@@ -283,63 +284,25 @@ class ExpandingWindowConfig:
     test_end_year_extended: int = 2021
     refit_frequency_years: int = 1
 
+    
+ModelName = Literal[
+    "OLS_full",
+    "OLS_3",
+    "PLS",
+    "PCR_Linear",
+    "RandomForest",
+    "GBRT",
+    "MLP",
+    "PCR_Huber",
+    "LinearSVR",
+    "OLS_3_old",
+]
+
 
 @dataclass
 class ModelSelectionConfig:
-    """
-    Configuration for which models to run in the expanding window.
-    
-    Gu et al. (2020) model specifications:
-    - OLS_3: HuberRegressor with 3 factors (size, value, momentum) - benchmark model
-    - OLS_full: HuberRegressor with all features with tuned hyperparameters (epsilon, alpha)
-    - PCR: Principal Component Regression (PCA + HuberRegressor)
-    - PLS: Partial Least Squares regression
-    - GBRT: Gradient Boosted Regression Trees
-    - RandomForest: Random Forest
-    - MLP: Multi-Layer Perceptron (feedforward neural network)
-    - LSTM: Long Short-Term Memory (recurrent neural network, only when run_all_models=True)
-    
-    Default Setting:
-    - run_all_models = True (default): Runs ALL models including LSTM
-    - models_to_run = None (default): Ignored when run_all_models=True
-    
-    Usage Examples:
-    
-    1. Run all models (default - includes LSTM):
-       ```python
-       run_all_models = True
-       models_to_run = None  # or any value, will be ignored
-       ```
-       Models run: OLS_3, OLS_full, PCR, PLS, GBRT, RandomForest, MLP, LSTM
-    
-    2. Run only OLS-3 benchmark (fastest, for debugging):
-       ```python
-       run_all_models = False
-       models_to_run = ["OLS_3"]
-       ```
-       Models run: OLS_3 only
-    
-    3. Run custom subset (without LSTM):
-       ```python
-       run_all_models = False
-       models_to_run = ["OLS_3", "GBRT", "MLP"]
-       ```
-       Models run: OLS_3, GBRT, MLP
-    
-    4. Run all models except LSTM (faster than full ensemble):
-       ```python
-       run_all_models = False
-       models_to_run = ["OLS_3", "OLS_full", "PCR", "PLS", "GBRT", "RandomForest", "MLP"]
-       ```
-    
-    Notes:
-    - LSTM is computationally expensive and only runs when run_all_models=True
-    - OLS_3 is the Gu et al. (2020) benchmark model and should always be included
-    - All "OLS" models use HuberRegressor (robust regression) as per Gu et al. (2020)
-    """
-    run_all_models: bool = False  # If True, run all models (including LSTM) - DEFAULT
-    models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
-    # models_to_run: List[str] = field(default_factory=lambda: ["OLS_3"])
+    run_all_models: bool = False
+    models_to_run: Optional[List[ModelName]] = field(default=None)
 
 
 @dataclass

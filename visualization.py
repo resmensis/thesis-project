@@ -257,6 +257,10 @@ def r2_metrics(
 
     ensure_dir(output_path.parent)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    logger.info(
+        f"Visualisation part finished: "
+        f"{file_name}.tex saved to: {output_path}"
+    )
 
     return output_path
 
@@ -512,6 +516,10 @@ def dm_tests(
         "\n".join(lines) + "\n",
         encoding="utf-8",
     )
+    logger.info(
+        f"Visualisation part finished: "
+        f"{file_name}.tex saved to: {output_path}"
+    )
 
     return output_path
 
@@ -705,4 +713,288 @@ def r2_comparison(
 
     ensure_dir(output_path.parent)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    logger.info(
+        f"Visualisation part finished: "
+        f"{file_name}.tex saved to: {output_path}"
+    )
     return output_path
+
+
+def portfolio_metrics(
+    portfolio_metrics: pd.DataFrame,
+    eval_config,
+    output_path: str | Path,
+    file_name: str,
+    sample_years: str,
+    label: str = "tab:portfolio_performance",
+) -> dict[str, Path]:
+    """
+    Export separate value- and equal-weighted Gu Table 7-style LaTeX tables.
+
+    Three models per panel, with Pred, Avg, SD, and SR for each model.
+    Return means and standard deviations are converted from fractions to
+    percent. The supplied annualized Sharpe ratios are left unchanged.
+
+    Returns a dictionary mapping weighting identifiers to output files.
+    """
+    metrics = [
+        "mean_predicted_return",
+        "mean_realized_return",
+        "std_realized_return",
+        "sharpe_ratio",
+    ]
+    required = {"model", "weighting", "portfolio", *metrics}
+    missing = required.difference(portfolio_metrics.columns)
+    if missing:
+        raise KeyError(f"Missing portfolio columns: {sorted(missing)}")
+    if portfolio_metrics.empty:
+        raise ValueError("portfolio_metrics is empty.")
+    if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
+        raise ValueError("Use a simple LaTeX label.")
+
+    def escape_latex(text):
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        return "".join(replacements.get(c, c) for c in str(text))
+
+    data = portfolio_metrics.copy()
+    if data[["model", "weighting", "portfolio"]].isna().any().any():
+        raise ValueError("Model, weighting, and portfolio must not be missing.")
+
+    data["model"] = data["model"].astype(str)
+    data = data[
+        ~data["model"].isin(eval_config.exclude_from_table)
+    ].copy()
+
+    if data.empty:
+        raise ValueError("No models remain after exclude_from_table.")
+
+    # Normalize integer deciles and the long-short identifier.
+    raw_portfolios = data["portfolio"].astype(str)
+    is_hl = raw_portfolios.eq("high_minus_low")
+    deciles = pd.to_numeric(raw_portfolios.where(~is_hl), errors="coerce")
+    invalid = ~is_hl & (
+        deciles.isna()
+        | ~deciles.between(1, 10)
+        | deciles.mod(1).ne(0)
+    )
+    if invalid.any():
+        raise ValueError(
+            "Expected deciles 1–10 or 'high_minus_low'. "
+            f"Unexpected portfolios: {raw_portfolios[invalid].unique().tolist()}"
+        )
+
+    data["portfolio"] = [
+        "high_minus_low" if hl else str(int(decile))
+        for hl, decile in zip(is_hl, deciles)
+    ]
+
+    if data.duplicated(["model", "weighting", "portfolio"]).any():
+        raise ValueError(
+            "Expected one row per model, weighting, and portfolio."
+        )
+
+    data[metrics] = (
+        data[metrics]
+        .apply(pd.to_numeric, errors="raise")
+        .replace([np.inf, -np.inf], np.nan)
+    )
+    data[metrics[:3]] *= 100.0
+
+    weightings = {
+        "value_weighted": "Value-weighted",
+        "equal_weighted": "Equal-weighted",
+    }
+    unexpected = set(data["weighting"]).difference(weightings)
+    if unexpected:
+        raise ValueError(f"Unknown weighting identifiers: {sorted(unexpected)}")
+
+    for weighting in weightings:
+        if not data["weighting"].eq(weighting).any():
+            raise ValueError(f"No data available for {weighting}.")
+
+    def model_heading(model):
+        heading = eval_config.default_labels.get(
+            model, escape_latex(model)
+        )
+        suffix = eval_config.default_sublabels.get(model, "")
+        separator = r"\ " if suffix and not suffix.startswith("+") else ""
+        return heading + separator + suffix
+
+    def format_value(value):
+        if pd.isna(value):
+            return r"\multicolumn{1}{c}{--}"
+        text = f"{value:.2f}"
+        return "0.00" if text == "-0.00" else text
+
+    portfolio_rows = [
+        ("1", "Low(L)"),
+        *[(str(i), str(i)) for i in range(2, 10)],
+        ("10", "High(H)"),
+        ("high_minus_low", "H--L"),
+    ]
+
+    output_dir = Path(output_path)
+    stem = Path(file_name).stem
+    outputs = {}
+
+    for weighting, weighting_title in weightings.items():
+        subset = data[data["weighting"].eq(weighting)]
+        available = subset["model"].drop_duplicates().tolist()
+        ordered = list(dict.fromkeys(
+            [m for m in eval_config.preferred_order if m in available]
+            + available
+        ))
+        lookup = subset.set_index(["model", "portfolio"])[metrics]
+
+        # A common width per metric keeps panels consistently aligned.
+        numeric_columns = []
+        for metric in metrics:
+            values = subset[metric].dropna()
+            digits = max(
+                (
+                    len(f"{abs(value):.2f}".split(".")[0])
+                    for value in values
+                ),
+                default=1,
+            )
+            numeric_columns.append(
+                f"S[table-format=-{digits}.2,"
+                "output-decimal-marker={.}]"
+            )
+
+        # Keep three four-column model slots, even in the last panel.
+        column_spec = (
+            r"@{\extracolsep{\fill}}l"
+            + "".join(numeric_columns) * 3
+            + r"@{}"
+        )
+
+        lines = [
+            r"\begin{table}[p]",
+            r"\centering",
+            r"\begin{threeparttable}",
+            (
+                r"\caption{Performance of the machine learning portfolios: "
+                + weighting_title
+                + " ("
+                + escape_latex(sample_years)
+                + ")}"
+            ),
+            rf"\label{{{label}:{weighting}}}",
+            r"\begingroup",
+            r"\scriptsize",
+            r"\setlength{\tabcolsep}{2pt}",
+            r"\renewcommand{\arraystretch}{1.05}",
+            r"\begin{tabular*}{\textwidth}{" + column_spec + "}",
+            r"\toprule",
+        ]
+
+        for start in range(0, len(ordered), 3):
+            panel_models = ordered[start:start + 3]
+            slots = panel_models + [None] * (3 - len(panel_models))
+
+            if start:
+                lines.append(r"\midrule")
+
+            lines.append(
+                " & "
+                + " & ".join(
+                    rf"\multicolumn{{4}}{{c}}{{{model_heading(model)}}}"
+                    if model is not None
+                    else r"\multicolumn{4}{c}{}"
+                    for model in slots
+                )
+                + r" \\"
+            )
+
+            lines.append(" ".join(
+                rf"\cmidrule(lr){{{2 + 4 * i}-{5 + 4 * i}}}"
+                for i in range(len(panel_models))
+            ))
+
+            lines.append(
+                " & "
+                + " & ".join(
+                    rf"\multicolumn{{1}}{{c}}{{{heading}}}"
+                    if model is not None else r"\multicolumn{1}{c}{}"
+                    for model in slots
+                    for heading in ("Pred", "Avg", "SD", "SR")
+                )
+                + r" \\"
+            )
+            lines.append(r"\midrule")
+
+            for portfolio, row_label in portfolio_rows:
+                if portfolio == "high_minus_low":
+                    lines.append(r"\addlinespace[3pt]")
+
+                cells = []
+                for model in slots:
+                    if model is None:
+                        cells.extend([""] * 4)
+                    elif (model, portfolio) not in lookup.index:
+                        cells.extend([r"\multicolumn{1}{c}{--}"] * 4)
+                    else:
+                        values = lookup.loc[(model, portfolio)]
+                        cells.extend(
+                            format_value(values[metric])
+                            for metric in metrics
+                        )
+
+                lines.append(
+                    row_label + " & " + " & ".join(cells) + r" \\"
+                )
+
+        lines.extend([
+            r"\bottomrule",
+            r"\end{tabular*}",
+            r"\endgroup",
+            r"\begin{tablenotes}[flushleft]",
+            r"\footnotesize",
+            (
+                r"\item Notes: Stocks are sorted into deciles each month "
+                r"by their predicted returns. Low(L) and High(H) denote "
+                r"the lowest- and highest-prediction deciles. "
+                r"Pred is the average predicted monthly return; Avg is "
+                r"the average realized monthly excess return; SD is the "
+                r"standard deviation of realized monthly excess returns. "
+                r"Pred, Avg, and SD are expressed in percent. "
+                r"SR is the annualized Sharpe ratio supplied by the "
+                r"evaluation function. H--L denotes the high-minus-low "
+                r"portfolio; its statistics are taken directly from the "
+                r"portfolio metrics, not calculated by subtracting "
+                r"decile standard deviations or Sharpe ratios. "
+                r"Portfolios are "
+                + weighting_title.lower()
+                + r". The evaluation period is "
+                + escape_latex(sample_years)
+                + r". Models in exclude\_from\_table are omitted. "
+                r"Unavailable or nonfinite results are shown as --."
+            ),
+            r"\end{tablenotes}",
+            r"\end{threeparttable}",
+            r"\end{table}",
+        ])
+
+        destination = output_dir / f"{stem}_{weighting}.tex"
+        ensure_dir(destination.parent)
+        destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        outputs[weighting] = destination
+
+        logger.info(
+            f"Visualisation part finished: "
+            f"{stem}_{weighting}.tex saved to: {output_dir}"
+        )
+
+    return outputs

@@ -3,9 +3,9 @@ import logging
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List, Optional, Literal
 
-from config import ExpandingWindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig
+from config import WindowConfig, DataRegimeConfig, HyperGridConfig, ReproducibilityConfig, CacheConfig, ModelName
 from models_linear import fit_custom_huber, tune_huber_regression, tune_pcr_huber, tune_pcr_linear, tune_pls, tune_linear_svr
 from models_trees import tune_gbrt, tune_random_forest
 from models_mlp import tune_mlp_models
@@ -36,7 +36,7 @@ def yearly_outputs_exist(
 
 def iter_yearly_splits(
     df: pd.DataFrame,
-    config: ExpandingWindowConfig,
+    config: WindowConfig,
     test_end_year: int,
 ):
     dates = df["date"].to_numpy()
@@ -45,16 +45,18 @@ def iter_yearly_splits(
     for year in range(config.test_start_year, test_end_year + 1):
         offset = year - config.test_start_year
         train_end_year = config.initial_train_end_year + offset
+        train_start_year = train_end_year - 17
         val_end_year = config.val_end_year + offset
         val_start_year = val_end_year - 11
 
+        train_start = pd.Timestamp(f"{train_start_year}-01-01")
         train_end = pd.Timestamp(f"{train_end_year}-12-31")
         val_start = pd.Timestamp(f"{val_start_year}-01-01")
         val_end = pd.Timestamp(f"{val_end_year}-12-31")
         test_start = pd.Timestamp(f"{year}-01-01")
         test_end = pd.Timestamp(f"{year}-12-31")
 
-        train_mask = date_index <= train_end
+        train_mask = date_index <= train_end if config.window_type == "expanding" else (date_index >= train_start) & (date_index <= train_end)
         val_mask = (date_index >= val_start) & (date_index <= val_end)
         test_mask = (date_index >= test_start) & (date_index <= test_end)
 
@@ -116,7 +118,7 @@ def save_best_params_by_model(
 
 def get_yearly_splits(
     df: pd.DataFrame,
-    config: ExpandingWindowConfig,
+    config: WindowConfig,
     test_end_year: int,
 ) -> list[Dict[str, Any]]:
     """
@@ -261,7 +263,7 @@ def train_models_for_year(
     grid_config: HyperGridConfig,
     repro_config: ReproducibilityConfig,
     year: int,
-    models_to_run: Optional[List[str]] = None,
+    models_to_run: Optional[List[ModelName]] = None,
 ) -> tuple[
     Dict[str, Any],
     Dict[str, pd.Series],
@@ -612,17 +614,16 @@ def generate_predictions(
     return predictions
 
 
-def run_expanding_window(
+def run_pred_window(
     feature_panel: pd.DataFrame,
     feature_cols: list[str],
     regime_config: DataRegimeConfig,
     grid_config: HyperGridConfig,
     repro_config: ReproducibilityConfig,
     cache_config: CacheConfig,
-    expand_config: ExpandingWindowConfig,
-    window_name: str,
+    window_config: WindowConfig, 
     output_dir: str,
-    models_to_run: Optional[List[str]] = None,
+    models_to_run: Optional[List[ModelName]] = None,
 ) -> pd.DataFrame | None:
     """
     Run expanding-window forecasting with annual refitting.
@@ -633,12 +634,12 @@ def run_expanding_window(
     """
     logger.info(f"Starting expanding window forecasting: {output_dir}")
 
-    test_end_year = expand_config.test_end_year_extended
+    test_end_year = window_config.test_end_year_extended
 
     """
     yearly_splits = get_yearly_splits(
         df=feature_panel,
-        config=expand_config,
+        config=window_config,
         test_end_year=test_end_year,
     )    
 
@@ -676,7 +677,7 @@ def run_expanding_window(
 
     for split in iter_yearly_splits(
         df=feature_panel,
-        config=expand_config,
+        config=window_config,
         test_end_year=test_end_year,
     ):
         year = split["year"]

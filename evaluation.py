@@ -739,43 +739,48 @@ def evaluate_predictions(
         predictions=predictions_original,
         regime_config=regime_config,
     )
-    out_path_r2_metrics_original = f"{output_dir}/{regime_config.mode}/r2_metrics_original.csv"
+    out_path_r2_metrics_original = f"{output_dir}/r2_metrics_original.csv"
     save_csv(r2_metrics_original,out_path_r2_metrics_original,enabled=save_outputs)
+    logger.info(
+        f"Evaluation part finished: "
+        f"r2_metrics_original.csv saved to: {output_dir}"
+    )
 
     r2_metrics = compute_model_r2_metrics(
         predictions=predictions,
         regime_config=regime_config,
     )
-    out_path_r2_metrics = f"{output_dir}/{regime_config.mode}/r2_metrics.csv"
+    out_path_r2_metrics = f"{output_dir}/r2_metrics.csv"
     save_csv(r2_metrics,out_path_r2_metrics,enabled=save_outputs)
+    logger.info(
+        f"Evaluation part finished: "
+        f"r2_metrics.csv saved to: {output_dir}"
+    )
 
     dm_tests = compute_diebold_mariano_tests(
         predictions=predictions,
     )
-    out_path_dm_tests = f"{output_dir}/{regime_config.mode}/dm_tests.csv"
+    out_path_dm_tests = f"{output_dir}/dm_tests.csv"
     save_csv(dm_tests,out_path_dm_tests,enabled=save_outputs)
+    logger.info(
+        f"Evaluation part finished: "
+        f"dm_tests.csv saved to: {output_dir}"
+    )
 
     portfolio_returns, portfolio_metrics = build_ml_portfolios(
         predictions=predictions,
         n_quantiles=n_quantiles,
     )
     """
-    out_path_portfolio_returns = f"{output_dir}/{regime_config.mode}/portfolio_returns.parquet"
+    out_path_portfolio_returns = f"{output_dir}/portfolio_returns.parquet"
     save_parquet(portfolio_returns,out_path_portfolio_returns,enabled=save_outputs)    
     """
 
-    out_path_portfolio_metrics = (
-        f"{output_dir}/{regime_config.mode}/portfolio_metrics.csv"
-    )
-    save_csv(
-        portfolio_metrics,
-        out_path_portfolio_metrics,
-        enabled=save_outputs,
-)
-
+    out_path_portfolio_metrics = (f"{output_dir}/portfolio_metrics.csv")
+    save_csv(portfolio_metrics,out_path_portfolio_metrics,enabled=save_outputs,)
     logger.info(
-        f"Evaluation completed for {len(model_cols)} models."
-        f"Metrics save to {output_dir}/{regime_config.mode}"
+        f"Evaluation part finished: "
+        f"portfolio_metrics.csv saved to: {output_dir}"
     )
 
     feature_importance_results = None
@@ -788,6 +793,11 @@ def evaluate_predictions(
             regime_mode=regime_config.mode,
             save_outputs=save_outputs,
         )
+
+    logger.info(
+        f"Evaluation completed for {len(model_cols)} models."
+        f"Metrics save to {output_dir}"
+    )
 
     return {
         "r2_metrics_original": r2_metrics_original,

@@ -11,31 +11,32 @@ from config import (
     ReproducibilityConfig,
     CharacteristicsFrequency,
     LoggingConfig,
-    ExpandingWindowConfig,
+    WindowConfig,
     ModelSelectionConfig,
     EvaluationConfig,
+    ModelName
 )
 
 
 from io_utils import ensure_dir, set_global_seed, setup_project_logger, maybe_load_parquet, maybe_load_pickle
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
-from expanding_window import run_expanding_window
+from prediction_window import run_pred_window
 from evaluation import evaluate_predictions
 
 
 def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
-    cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
+    cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
     data_cfg = DataFilesConfig()
-    run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
+    run_ctrl_cfg = RunControlConfig(feature_panel_only=True) 
     regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
-    expand_cfg = ExpandingWindowConfig()
-    model_cfg = ModelSelectionConfig(run_all_models = False,
-                                     models_to_run= ["LinearSVR","GBRT"]
+    window_cfg = WindowConfig(window_type="expanding")
+    model_cfg = ModelSelectionConfig(run_all_models = True,
+                                     models_to_run= ["LinearSVR", "GBRT"]
                                     )
     eval_cfg = EvaluationConfig()
     # Set global seed ONCE at the start - ensures reproducibility across all runs
@@ -87,7 +88,11 @@ def main():
     else:
         macro_suffix = "redInter"
 
-    feature_suffix = "ol3_only_mode" if regime_cfg.ols3_only_mode else f"{industry_suffix}_{macro_suffix}"
+    feature_suffix = (
+        "ols3_only_mode" 
+        if regime_cfg.ols3_only_mode 
+        else f"{industry_suffix}_{macro_suffix}"
+    )
 
     if regime_cfg.mode == "full":
         feature_panel_path = f"{cache_cfg.cache_dir}/feature_panel_{regime_cfg.mode}_{feature_suffix}.parquet"
@@ -99,7 +104,11 @@ def main():
     grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
     model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-    pred_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
+    pred_window_path = (
+        f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window" 
+        if regime_cfg.mode=="coding" 
+        else f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window/{feature_suffix}_{model_suffix}_{grid_suffix}"
+    )
     pred_path = f"output/{pred_window_path}"
     all_predictions_path = f"{pred_path}/all_predictions.parquet" 
 
@@ -213,26 +222,21 @@ def main():
         return
 
     # ------------------------------------------------------------------
-    # 3. Run expanding window forecasting
+    # 3. Run prediction window forecasting
     # ------------------------------------------------------------------
     logger.info("Starting expanding window forecasting.")
     
-    # IMPORTANT: Run both timeframes in ONE continuous execution
-    # The random seed is set globally above, ensuring reproducibility
-    # We run to extended end (2021) and evaluate at both 2016 and 2021
-    
-    # Single unified run - evaluates at both original (2016) and extended (2021)
+
     logger.info("Running unified expanding window (1987-2021) with evaluation at 2016 and 2021")
     
-    predictions = run_expanding_window(
+    predictions = run_pred_window(
         feature_panel=feature_panel,
         feature_cols=feature_cols,
         regime_config=regime_cfg,
         grid_config=grid_cfg,
         repro_config=repro_cfg,
         cache_config=cache_cfg,
-        expand_config=expand_cfg,
-        window_name=pred_window_path,
+        window_config=window_cfg,
         output_dir=pred_path,
         models_to_run=models_to_run,  # Determined by ModelSelectionConfig
     )
@@ -240,10 +244,7 @@ def main():
     logger.info("Expanding window completed.")
     logger.info(f"Total predictions: {len(predictions)}")
     
-    # Results are saved to:
-    # - output/unified/all_predictions.parquet
-    # - output/unified/metrics_by_year.csv (full 1987-2021)
-    # - output/unified/metrics_by_year_original.csv (1987-2016 only)
+
 
 
     evaluation = evaluate_predictions(
