@@ -11,7 +11,7 @@ from io_utils import ensure_dir, save_parquet, save_csv
 logger = logging.getLogger("eap_ml.visualization")
 
 
-def r2_metrics_to_gu_table(
+def r2_metrics(
     r2_metrics: pd.DataFrame,
     eval_config,
     output_path: str | Path,
@@ -257,4 +257,449 @@ def r2_metrics_to_gu_table(
     ensure_dir(output_path.parent)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    return output_path
+
+
+def dm_tests(
+    dm_tests: pd.DataFrame,
+    eval_config,
+    output_path: str | Path,
+    sample_years: str,
+    label: str = "tab:diebold_mariano_tests",
+) -> Path:
+    """
+    Export a Gu et al. Table 3-style LaTeX table with decimal alignment.
+
+    Positive entries mean the column model has lower loss than the row model.
+    Bold: individual p-value <= 0.05.
+    Asterisk: supplied Bonferroni-adjusted p-value <= 0.05.
+
+    Required columns:
+        model_a, model_b, dm_statistic, p_value, p_value_bonferroni
+
+    Uses eval_config.preferred_order, default_labels, and default_sublabels.
+    Configured labels and sublabels are treated as LaTeX.
+    """
+    required = {
+        "model_a",
+        "model_b",
+        "dm_statistic",
+        "p_value",
+        "p_value_bonferroni",
+    }
+    missing = required.difference(dm_tests.columns)
+    if missing:
+        raise KeyError(f"Missing DM columns: {sorted(missing)}")
+    if dm_tests.empty:
+        raise ValueError("dm_tests is empty.")
+    if dm_tests[["model_a", "model_b"]].isna().any().any():
+        raise ValueError("Model names must not be missing.")
+    if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
+        raise ValueError("Use a simple LaTeX label.")
+
+    output_path = Path(output_path)
+    if output_path.suffix.lower() != ".tex":
+        raise ValueError("output_path must have a .tex extension.")
+
+    table = dm_tests.copy()
+    table[["model_a", "model_b"]] = table[
+        ["model_a", "model_b"]
+    ].astype(str)
+
+    numeric_cols = [
+        "dm_statistic",
+        "p_value",
+        "p_value_bonferroni",
+    ]
+    table[numeric_cols] = table[numeric_cols].apply(
+        pd.to_numeric,
+        errors="raise",
+    )
+
+    def escape_latex(text):
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        return "".join(
+            replacements.get(character, character)
+            for character in str(text)
+        )
+
+    available = list(dict.fromkeys(
+        table[["model_a", "model_b"]].to_numpy().ravel()
+    ))
+    ordered = list(dict.fromkeys(
+        [
+            name
+            for name in eval_config.preferred_order
+            if name in available
+        ]
+        + available
+    ))
+
+    if len(ordered) < 2:
+        raise ValueError("At least two models are required.")
+
+    labels = {
+        name: eval_config.default_labels.get(
+            name,
+            escape_latex(name),
+        )
+        for name in ordered
+    }
+    sublabels = {
+        name: eval_config.default_sublabels.get(name, "")
+        for name in ordered
+    }
+
+    pairs = {}
+    for row in table.itertuples(index=False):
+        key = frozenset((row.model_a, row.model_b))
+        if row.model_a == row.model_b or key in pairs:
+            raise ValueError(
+                "Expected one row per unique, distinct model pair."
+            )
+        pairs[key] = row
+
+    def format_cell(row_model, column_model):
+        pair = pairs.get(frozenset((row_model, column_model)))
+
+        if pair is None or not np.isfinite(pair.dm_statistic):
+            return r"\multicolumn{1}{c}{--}"
+
+        value = (
+            pair.dm_statistic
+            if pair.model_a == row_model
+            else -pair.dm_statistic
+        )
+
+        text = f"{value:.2f}"
+        if text == "-0.00":
+            text = "0.00"
+
+        if pd.notna(pair.p_value) and pair.p_value <= 0.05:
+            text = r"\bfseries " + text
+
+        if (
+            pd.notna(pair.p_value_bonferroni)
+            and pair.p_value_bonferroni <= 0.05
+        ):
+            text += r"{\textsuperscript{*}}"
+
+        return text
+
+    column_models = ordered[1:]
+
+    # Allow enough integer digits for the rounded statistics.
+    finite_values = table.loc[
+        np.isfinite(table["dm_statistic"]),
+        "dm_statistic",
+    ]
+    integer_digits = max(
+        (
+            len(f"{abs(value):.2f}".split(".")[0])
+            for value in finite_values
+        ),
+        default=1,
+    )
+
+    numeric_column = (
+        r"S["
+        + f"table-format=-{integer_digits}.2,"
+        + r"mode=text,"
+        r"detect-weight=true,"
+        r"table-space-text-post={\textsuperscript{*}},"
+        r"table-align-text-post=false"
+        r"]"
+    )
+
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\centering",
+        r"\begin{threeparttable}",
+        (
+            r"\caption{Comparison of out-of-sample prediction using "
+            r"Diebold--Mariano tests: "
+            + escape_latex(sample_years)
+            + "}"
+        ),
+        rf"\label{{{label}}}",
+        r"\begingroup",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\renewcommand{\arraystretch}{1.15}",
+        (
+            r"\begin{tabular*}{\textwidth}"
+            r"{@{\extracolsep{\fill}}l"
+            + numeric_column * len(column_models)
+            + r"@{}}"
+        ),
+        r"\toprule",
+        " & " + " & ".join(
+            rf"\multicolumn{{1}}{{c}}{{{labels[name]}}}"
+            for name in column_models
+        ) + r" \\",
+        " & " + " & ".join(
+            rf"\multicolumn{{1}}{{c}}{{{sublabels[name]}}}"
+            for name in column_models
+        ) + r" \\",
+        r"\midrule",
+    ]
+
+    for i, row_model in enumerate(ordered[:-1]):
+        suffix = sublabels[row_model]
+        separator = (
+            r"\ "
+            if suffix and not suffix.startswith("+")
+            else ""
+        )
+        row_label = labels[row_model] + separator + suffix
+
+        cells = [
+            ""
+            if j <= i
+            else format_cell(row_model, column_model)
+            for j, column_model in enumerate(
+                column_models,
+                start=1,
+            )
+        ]
+
+        lines.append(
+            row_label + " & " + " & ".join(cells) + r" \\"
+        )
+
+    lines.extend([
+        r"\bottomrule",
+        r"\end{tabular*}",
+        r"\endgroup",
+        r"\begin{tablenotes}[flushleft]",
+        r"\footnotesize",
+        (
+            r"\item This table reports pairwise Diebold--Mariano test "
+            r"statistics comparing out-of-sample prediction performance. "
+            r"Positive numbers indicate that the column model outperforms "
+            r"the row model; negative numbers indicate the reverse. "
+            r"Bold font indicates significance at the 5\% level using "
+            r"individual two-sided p-values. An asterisk indicates "
+            r"significance at the 5\% level using the supplied "
+            r"Bonferroni-adjusted p-values, whose testing family includes "
+            r"all planned unique model pairs in the corresponding DM run. "
+            r"The tests use yearly averages of squared-loss differences "
+            r"and Newey--West standard errors. "
+            r"The out-of-sample period is "
+            + escape_latex(sample_years)
+            + r". Undefined or unavailable comparisons are shown as --."
+        ),
+        r"\end{tablenotes}",
+        r"\end{threeparttable}",
+        r"\end{table}",
+    ])
+
+    ensure_dir(output_path.parent)
+    output_path.write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+
+    return output_path
+
+
+def r2_comparison_to_gu_table(
+    r2_metrics_original: pd.DataFrame,
+    r2_metrics: pd.DataFrame,
+    eval_config,
+    output_path: str | Path,
+    original_years: str,
+    extended_years: str,
+    label: str = "tab:r2_comparison",
+) -> Path:
+    """
+    Compare supplied Gu et al. benchmarks with two replication periods.
+
+    Replication inputs require model and r2_overall columns.
+    Replication R2 values are fractions; benchmark values below are percent.
+
+    Fixed model IDs determine column placement, never DataFrame row positions.
+    Configured model labels and sublabels are treated as LaTeX.
+    """
+    # model ID, fallback heading, fallback suffix, Gu benchmark in percent
+    columns = [
+        ("OLS_full", "OLS", "+H", -3.46),
+        ("OLS_3", "OLS-3", "+H", 0.16),
+        ("PLS", "PLS", "", 0.27),
+        ("PCR_Linear", "PCR", "", 0.26),
+        ("ENet", "ENet", "+H", 0.11),
+        ("GLM", "GLM", "+H", 0.19),
+        ("RandomForest", "RF", "", 0.33),
+        ("GBRT", "GBRT", "+H", 0.34),
+        ("NN1", "NN1", "", 0.33),
+        ("NN2", "NN2", "", 0.39),
+        ("NN3", "NN3", "", 0.40),
+        ("NN4", "NN4", "", 0.39),
+        ("NN5", "NN5", "", 0.36),
+        ("PCR_Huber", "PCR", "+H", np.nan),
+        ("LinearSVR", "LinSVR", "", np.nan),
+        ("OLS_3_old", "Huber-3", "sklearn", np.nan),
+    ]
+    model_ids = [model for model, _, _, _ in columns]
+
+    def escape_latex(text):
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        return "".join(replacements.get(c, c) for c in str(text))
+
+    def extract_percent(frame, frame_name):
+        missing = {"model", "r2_overall"}.difference(frame.columns)
+        if missing:
+            raise KeyError(f"{frame_name}: missing columns {sorted(missing)}")
+
+        data = frame[["model", "r2_overall"]].copy()
+        if data["model"].isna().any():
+            raise ValueError(f"{frame_name}: missing model names.")
+
+        data["model"] = data["model"].astype(str)
+        if data["model"].duplicated().any():
+            raise ValueError(f"{frame_name}: expected one row per model.")
+
+        unknown = sorted(set(data["model"]).difference(model_ids))
+        if unknown:
+            raise ValueError(
+                f"{frame_name}: add these models to the column mapping: "
+                f"{unknown}"
+            )
+
+        values = pd.to_numeric(
+            data.set_index("model")["r2_overall"],
+            errors="raise",
+        )
+        values = (values * 100.0).replace([np.inf, -np.inf], np.nan)
+        return values.reindex(model_ids)
+
+    original = extract_percent(r2_metrics_original, "r2_metrics_original")
+    extended = extract_percent(r2_metrics, "r2_metrics")
+    benchmark = pd.Series(
+        [value for _, _, _, value in columns],
+        index=model_ids,
+        dtype=float,
+    )
+
+    labels = {
+        model: eval_config.default_labels.get(model, heading)
+        for model, heading, _, _ in columns
+    }
+    sublabels = {
+        model: eval_config.default_sublabels.get(model, suffix)
+        for model, _, suffix, _ in columns
+    }
+
+    if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
+        raise ValueError("Use a simple LaTeX label.")
+
+    output_path = Path(output_path)
+    if output_path.suffix.lower() != ".tex":
+        raise ValueError("output_path must have a .tex extension.")
+
+    all_values = pd.concat([benchmark, original, extended]).dropna()
+    integer_digits = max(
+        (len(f"{abs(value):.2f}".split(".")[0]) for value in all_values),
+        default=1,
+    )
+    numeric_column = (
+        f"S[table-format=-{integer_digits}.2,"
+        "output-decimal-marker={.}]"
+    )
+
+    def format_value(value):
+        if pd.isna(value):
+            return r"\multicolumn{1}{c}{--}"
+        text = f"{value:.2f}"
+        return "0.00" if text == "-0.00" else text
+
+    def table_row(title, values):
+        return (
+            title + " & "
+            + " & ".join(format_value(values.loc[m]) for m in model_ids)
+            + r" \\"
+        )
+
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\centering",
+        r"\begin{threeparttable}",
+        (
+            r"\caption{Comparing predictive performance: "
+            r"\citet{gu_empirical_2020} vs.\ replication}"
+        ),
+        rf"\label{{{label}}}",
+        r"\begingroup",
+        r"\scriptsize",
+        r"\renewcommand{\arraystretch}{1.15}",
+        r"\setlength{\tabcolsep}{2pt}",
+        (
+            r"\begin{tabular*}{\textwidth}"
+            r"{@{\extracolsep{\fill}}l"
+            + numeric_column * len(model_ids)
+            + r"@{}}"
+        ),
+        r"\toprule",
+        " & " + " & ".join(
+            rf"\multicolumn{{1}}{{c}}{{{labels[m]}}}"
+            for m in model_ids
+        ) + r" \\",
+        " & " + " & ".join(
+            rf"\multicolumn{{1}}{{c}}{{{sublabels[m]}}}"
+            for m in model_ids
+        ) + r" \\",
+        r"\midrule",
+        table_row("Gu et al.", benchmark),
+        table_row(r"Replication$_{\mathrm{or}}$", original),
+        table_row(r"Replication$_{\mathrm{ext}}$", extended),
+        r"\bottomrule",
+        r"\end{tabular*}",
+        r"\endgroup",
+        r"\begin{tablenotes}[flushleft]",
+        r"\footnotesize",
+        (
+            r"\item Notes: Entries report monthly out-of-sample "
+            r"$R^2_{\mathrm{OOS}}$ in percent for the full stock panel. "
+            r"The Gu et al.\ row contains the supplied published benchmark "
+            r"values. Replication$_{\mathrm{or}}$ covers "
+            + escape_latex(original_years)
+            + r"; Replication$_{\mathrm{ext}}$ covers "
+            + escape_latex(extended_years)
+            + r". Models are aligned by the explicit column mapping; "
+            r"shared headings do not imply identical specifications, "
+            r"estimation procedures, or data. "
+            r"ENet and GLM benchmark columns are retained even when those "
+            r"models are absent from the replication. PCR+H, LinSVR, "
+            r"and Huber-3 sklearn have no supplied Gu et al.\ benchmark. "
+            r"A dash denotes an unavailable or nonfinite result."
+        ),
+        r"\end{tablenotes}",
+        r"\end{threeparttable}",
+        r"\end{table}",
+    ]
+
+    ensure_dir(output_path.parent)
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output_path

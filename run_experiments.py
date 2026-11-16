@@ -99,10 +99,11 @@ def main():
     grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
     model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-    predictions_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
-    predictions_path = f"output/{predictions_window_path}/all_predictions.parquet" 
+    pred_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
+    pred_path = f"output/{pred_window_path}"
+    all_predictions_path = f"{pred_path}/all_predictions.parquet" 
 
-    visualization_path = f"output/{predictions_window_path}/visualization"
+    visualization_path = f"{pred_path}/visualization"
 
     # ------------------------------------------------------------------
     # 1. Build or load complete dataset
@@ -231,8 +232,8 @@ def main():
         repro_config=repro_cfg,
         cache_config=cache_cfg,
         expand_config=expand_cfg,
-        window_name=predictions_window_path,
-        output_dir="output",
+        window_name=pred_window_path,
+        output_dir=pred_path,
         models_to_run=models_to_run,  # Determined by ModelSelectionConfig
     )
     
@@ -252,7 +253,7 @@ def main():
         output_dir="output",
         n_quantiles=10,
         save_outputs=True,
-        feature_importance_dir=f"output/{predictions_window_path}/feature_importance" ,
+        feature_importance_dir=f"{pred_path}/feature_importance" ,
     )
 
 

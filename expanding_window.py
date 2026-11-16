@@ -623,7 +623,7 @@ def run_expanding_window(
     window_name: str,
     output_dir: str,
     models_to_run: Optional[List[str]] = None,
-) -> pd.DataFrame:
+) -> pd.DataFrame | None:
     """
     Run expanding-window forecasting with annual refitting.
 
@@ -631,7 +631,7 @@ def run_expanding_window(
     Portfolio construction and overall performance evaluation
     are performed separately after all predictions exist.
     """
-    logger.info(f"Starting expanding window forecasting: {window_name}")
+    logger.info(f"Starting expanding window forecasting: {output_dir}")
 
     test_end_year = expand_config.test_end_year_extended
 
@@ -648,7 +648,7 @@ def run_expanding_window(
     """
 
 
-    outdir = Path(output_dir) / window_name
+    outdir = Path(output_dir)
     ensure_dir(outdir)
 
     all_predictions_path = outdir / "all_predictions.parquet"

@@ -13,6 +13,7 @@ from config import (
     LoggingConfig,
     ExpandingWindowConfig,
     ModelSelectionConfig,
+    EvaluationConfig
 )
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
@@ -20,7 +21,7 @@ from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from expanding_window import run_expanding_window
 from evaluation import evaluate_predictions
-from visualization import  r2_metrics_to_gu_table
+from visualization import  r2_metrics, dm_tests, r2_comparison_to_gu_table
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
@@ -35,6 +36,7 @@ expand_cfg = ExpandingWindowConfig()
 model_cfg = ModelSelectionConfig(run_all_models = False,
                                     models_to_run= ["OLS_3", "OLS_3_old", "OLS_full", "PCR_Huber", "PCR_Linear"]
                                 )
+eval_cfg = EvaluationConfig()
 
 
 complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
@@ -64,15 +66,40 @@ else:
 grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
 model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-predictions_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}" #/{feature_suffix}_{model_suffix}_{grid_suffix}
-predictions_path = f"output/{predictions_window_path}/all_predictions.parquet" 
+pred_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
+pred_path = f"output/{pred_window_path}"
+all_predictions_path = f"{pred_path}/all_predictions.parquet" 
+
+visualization_path = f"{pred_path}/visualization"
 
 
-path = "output_hummel/coding/r2_metrics.csv"
-r2_metrics = pd.read_csv(path)
+
+path_r2_metrics = f"{pred_path}/r2_metrics.csv"
+path_r2_metrics_original = f"{pred_path}/r2_metrics_original.csv"
+path_dm_tests = f"{pred_path}/dm_tests.csv"
 
 
 
-visualization = r2_metrics_to_gu_table(r2_metrics=r2_metrics,
-                                       output_path=f"output/{predictions_window_path}/abc.tex",
-                                       sample_label="xyz")
+r2_metrics_table = r2_metrics(
+    r2_metrics=pd.read_csv(path_r2_metrics),
+    eval_config=eval_cfg,
+    output_path=f"{visualization_path}/r2_extended.tex",
+    sample_years="1987 -- 2021",
+    label="tab:stock_prediction_performance_extended"
+    )
+
+dm_tests_table = dm_tests(
+    dm_tests=pd.read_csv(path_dm_tests),
+    eval_config=eval_cfg,
+    output_path=f"{visualization_path}/dm_tests.tex",
+    sample_years="1987 -- 2021",
+    )
+
+r2_comparison_table = r2_comparison_to_gu_table(
+    r2_metrics_original=pd.read_csv(path_r2_metrics_original),
+    r2_metrics=pd.read_csv(path_r2_metrics),
+    eval_config=eval_cfg,
+    output_path=f"{visualization_path}/r2_comparison.tex",
+    original_years="1987 -- 2016",
+    extended_years="1987 -- 2021",
+    )

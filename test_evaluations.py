@@ -21,7 +21,7 @@ from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from expanding_window import run_expanding_window
 from evaluation import evaluate_predictions
-from visualization import  r2_metrics_to_gu_table
+from visualization import  r2_metrics
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
@@ -66,14 +66,15 @@ else:
 grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
 model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-predictions_window_path = f"{regime_cfg.mode}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}" #/{model_suffix}_{grid_suffix}
-predictions_path = f"output/{predictions_window_path}/all_predictions.parquet" 
+pred_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
+pred_path = f"output/{pred_window_path}"
+all_predictions_path = f"{pred_path}/all_predictions.parquet" 
 
-visualization_path = f"output/{predictions_window_path}/visualization"
+visualization_path = f"{pred_path}/visualization"
 
 
 
-predictions = maybe_load_parquet(predictions_path, enabled=True)
+predictions = maybe_load_parquet(all_predictions_path, enabled=True)
 
 
 evaluation = evaluate_predictions(
@@ -83,12 +84,13 @@ evaluation = evaluate_predictions(
     output_dir="output",
     n_quantiles=10,
     save_outputs=True,
-    feature_importance_dir=f"output/{predictions_window_path}/feature_importance" ,
+    feature_importance_dir=f"{pred_path}/feature_importance" ,
 )
 
-
-visualization = r2_metrics_to_gu_table(r2_metrics=evaluation["r2_metrics"],
+"""
+r2_metrics_table = r2_metrics(r2_metrics=evaluation["r2_metrics"],
                                        eval_config=eval_cfg,
                                        output_path=f"{visualization_path}/r2_extended.tex",
                                        sample_years="1987 -- 2021",
                                        label="tab:stock_prediction_performance_extended")
+"""
