@@ -15,6 +15,7 @@ def r2_metrics(
     r2_metrics: pd.DataFrame,
     eval_config,
     output_path: str | Path,
+    file_name: str,
     sample_years: str,
     label: str = "tab:stock_prediction_performance",
 ) -> Path:
@@ -250,7 +251,7 @@ def r2_metrics(
         r"\end{table}",
     ])
 
-    output_path = Path(output_path)
+    output_path = Path(f"{output_path}/{file_name}.tex")
     if output_path.suffix.lower() != ".tex":
         raise ValueError("output_path must have a .tex extension.")
 
@@ -264,6 +265,7 @@ def dm_tests(
     dm_tests: pd.DataFrame,
     eval_config,
     output_path: str | Path,
+    file_name: str,
     sample_years: str,
     label: str = "tab:diebold_mariano_tests",
 ) -> Path:
@@ -297,7 +299,7 @@ def dm_tests(
     if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
         raise ValueError("Use a simple LaTeX label.")
 
-    output_path = Path(output_path)
+    output_path = Path(f"{output_path}/{file_name}.tex")
     if output_path.suffix.lower() != ".tex":
         raise ValueError("output_path must have a .tex extension.")
 
@@ -514,11 +516,12 @@ def dm_tests(
     return output_path
 
 
-def r2_comparison_to_gu_table(
+def r2_comparison(
     r2_metrics_original: pd.DataFrame,
     r2_metrics: pd.DataFrame,
     eval_config,
     output_path: str | Path,
+    file_name: str,
     original_years: str,
     extended_years: str,
     label: str = "tab:r2_comparison",
@@ -615,7 +618,7 @@ def r2_comparison_to_gu_table(
     if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
         raise ValueError("Use a simple LaTeX label.")
 
-    output_path = Path(output_path)
+    output_path = Path(f"{output_path}/{file_name}.tex")
     if output_path.suffix.lower() != ".tex":
         raise ValueError("output_path must have a .tex extension.")
 

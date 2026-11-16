@@ -21,7 +21,7 @@ from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from expanding_window import run_expanding_window
 from evaluation import evaluate_predictions
-from visualization import  r2_metrics, dm_tests, r2_comparison_to_gu_table
+from visualization import  r2_metrics, dm_tests, r2_comparison
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
@@ -83,7 +83,8 @@ path_dm_tests = f"{pred_path}/dm_tests.csv"
 r2_metrics_table = r2_metrics(
     r2_metrics=pd.read_csv(path_r2_metrics),
     eval_config=eval_cfg,
-    output_path=f"{visualization_path}/r2_extended.tex",
+    output_path=visualization_path,
+    file_name="r2_extended",
     sample_years="1987 -- 2021",
     label="tab:stock_prediction_performance_extended"
     )
@@ -91,15 +92,17 @@ r2_metrics_table = r2_metrics(
 dm_tests_table = dm_tests(
     dm_tests=pd.read_csv(path_dm_tests),
     eval_config=eval_cfg,
-    output_path=f"{visualization_path}/dm_tests.tex",
+    output_path=visualization_path,
+    file_name="dm_tests",
     sample_years="1987 -- 2021",
     )
 
-r2_comparison_table = r2_comparison_to_gu_table(
+r2_comparison_table = r2_comparison(
     r2_metrics_original=pd.read_csv(path_r2_metrics_original),
     r2_metrics=pd.read_csv(path_r2_metrics),
     eval_config=eval_cfg,
-    output_path=f"{visualization_path}/r2_comparison.tex",
+    output_path=visualization_path,
+    file_name="r2_comparison",
     original_years="1987 -- 2016",
     extended_years="1987 -- 2021",
     )
