@@ -58,6 +58,7 @@ def main():
     logger.info(f"Random seed: {repro_cfg.random_state}")
     logger.info(f"Cache dir: {cache_cfg.cache_dir}")
     logger.info(f"Data regime: {regime_cfg.mode}")
+    logger.info(f"Window type: {window_cfg.window_type}")
     
     # Log model selection configuration
     if model_cfg.run_all_models:
