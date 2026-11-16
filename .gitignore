@@ -6,6 +6,7 @@ logs
 data
 descriptives
 run_thesis.sbatch
+tests
 
 output_hummel
 logs_hummel

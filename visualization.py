@@ -71,10 +71,10 @@ def r2_metrics_to_gu_table(
     )
 
     preferred_order = model_order or [
-        "OLS_full", "OLS_3", "PLS", "PCR",
+        "OLS_full", "OLS_3", "PLS", "PCR_Linear",
         "ENet", "GLM", "RandomForest", "GBRT",
         "NN1", "NN2", "NN3", "NN4", "NN5",
-        "Huber", "MLP", "LSTM",
+        "PCR_Huber", "LinearSVR", "OLS_3_old",
     ]
 
     available = table["model"].tolist()
@@ -104,14 +104,46 @@ def r2_metrics_to_gu_table(
     default_labels = {
         "OLS_full": "OLS",
         "OLS_3": "OLS-3",
+        "PLS": "PLS",
+        "PCR_Linear": "PCR",
         "RandomForest": "RF",
-        "Huber": "Huber",
+        "GBRT": "GBRT",
+        "NN1": "NN1",
+        "NN2": "NN2",
+        "NN3": "NN3",
+        "NN4": "NN4",
+        "NN5": "NN5",
+        "PCR_Huber": "PCR",
+        "LinearSVR": "LinSVR",
+        "OLS_3_old": "Huber-3",
     }
     labels = {
         name: default_labels.get(name, escape_latex(name))
         for name in ordered
     }
     labels.update(model_labels or {})
+
+    default_sublabels = {
+        "OLS_full": "+H",
+        "OLS_3": "+H",
+        "PLS": "",
+        "PCR_Linear": "",
+        "RandomForest": "",
+        "GBRT": "+H",
+        "NN1": "",
+        "NN2": "",
+        "NN3": "",
+        "NN4": "",
+        "NN5": "",
+        "PCR_Huber": "+H",
+        "LinearSVR": "",
+        "OLS_3_old": "sklearn",
+    }
+    sublabels = {
+        name: default_sublabels.get(name, escape_latex(name))
+        for name in ordered
+    }
+    sublabels.update(model_labels or {})
 
     if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
         raise ValueError("Use a simple LaTeX label without special characters.")
@@ -151,6 +183,7 @@ def r2_metrics_to_gu_table(
         r"\begin{tabular}{l" + "r" * len(ordered) + "}",
         r"\toprule",
         " & " + " & ".join(labels[name] for name in ordered) + r" \\",
+        " & " + " & ".join(sublabels[name] for name in ordered) + r" \\",
         r"\midrule",
         table_row("All", "r2_overall"),
         table_row(f"Top {subsample_size:,}", "r2_top"),

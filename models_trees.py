@@ -119,7 +119,7 @@ def tune_gbrt(
     splitter = PredefinedSplit(test_fold=test_fold)
 
     grid = GridSearchCV(
-        estimator=GradientBoostingRegressor(random_state=random_state),
+        estimator=GradientBoostingRegressor(random_state=random_state,loss="huber",alpha=0.999),
         param_grid=param_grid,
         scoring=gu_pred_r2_scorer,
         cv=splitter,
@@ -134,7 +134,7 @@ def tune_gbrt(
     best_params = grid.best_params_
 
     # Refit only on the training set, exactly as in the previous implementation.
-    best_model = GradientBoostingRegressor(random_state=random_state,**best_params)
+    best_model = GradientBoostingRegressor(random_state=random_state,loss="huber",alpha=0.999,**best_params)
     best_model.fit(X_train, y_train)
 
     feature_importance = pd.Series(

@@ -134,7 +134,7 @@ class HyperGridConfig:
     linear_svr_base: Dict = field(default_factory=lambda: {
         "epsilon": [0.0, 0.001, 0.01],
         "C": [0.01, 0.1, 1.0],
-        "max_iter": [3500],
+        "max_iter": [1000],
     })
 
     linear_svr_extended: Dict = field(default_factory=lambda: {
