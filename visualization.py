@@ -683,8 +683,8 @@ def r2_comparison(
         ) + r" \\",
         r"\midrule",
         table_row("Gu et al.", benchmark),
-        table_row(r"Replication$_{\mathrm{or}}$", original),
-        table_row(r"Replication$_{\mathrm{ext}}$", extended),
+        table_row(r"Replication$_{2016}$", original),
+        table_row(r"Replication$_{2021}$", extended),
         r"\bottomrule",
         r"\end{tabular*}",
         r"\endgroup",
@@ -694,9 +694,9 @@ def r2_comparison(
             r"\item Notes: Entries report monthly out-of-sample "
             r"$R^2_{\mathrm{OOS}}$ in percent for the full stock panel. "
             r"The Gu et al.\ row contains the supplied published benchmark "
-            r"values. Replication$_{\mathrm{or}}$ covers "
+            r"values. Replication$_{2016}$ covers "
             + escape_latex(original_years)
-            + r"; Replication$_{\mathrm{ext}}$ covers "
+            + r"; Replication$_{2021}$ covers "
             + escape_latex(extended_years)
             + r". Models are aligned by the explicit column mapping; "
             r"shared headings do not imply identical specifications, "

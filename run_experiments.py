@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
+
 from config import (
     CacheConfig,
     DataFilesConfig,
@@ -27,9 +28,9 @@ from evaluation import evaluate_predictions
 
 def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
-    cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
+    cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
-    run_ctrl_cfg = RunControlConfig(feature_panel_only=True) 
+    run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
     regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
@@ -239,7 +240,7 @@ def main():
         cache_config=cache_cfg,
         window_config=window_cfg,
         output_dir=pred_path,
-        models_to_run=models_to_run,  # Determined by ModelSelectionConfig
+        models_to_run=models_to_run,  
     )
     
     logger.info("Expanding window completed.")

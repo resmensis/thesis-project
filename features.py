@@ -78,7 +78,7 @@ def build_feature_panel(
     data_config,
     save_feature_panel: bool,
 ):
-    logger.info(f"Building feature panel, mode={regime_config.mode}, interactions={regime_config.include_macro_interactions}")
+    logger.info(f"Building feature panel, mode={regime_config.mode}, interactions={regime_config.include_macro_interactions}, dummies={regime_config.include_industry_dummies}")
 
     cols_chara = data_config.chara_cols
     cols_macro = data_config.marco_cols
