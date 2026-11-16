@@ -13,12 +13,10 @@ logger = logging.getLogger("eap_ml.visualization")
 
 def r2_metrics_to_gu_table(
     r2_metrics: pd.DataFrame,
+    eval_config,
     output_path: str | Path,
-    sample_label: str,
+    sample_years: str,
     label: str = "tab:stock_prediction_performance",
-    model_order: list[str] | None = None,
-    model_labels: dict[str, str] | None = None,
-    exclude_from_plot: tuple[str, ...] = ("OLS_full",),
 ) -> Path:
     """
     Write a Gu et al. Table 1-style LaTeX table with a grouped bar chart.
@@ -70,12 +68,7 @@ def r2_metrics_to_gu_table(
         [np.inf, -np.inf], np.nan
     )
 
-    preferred_order = model_order or [
-        "OLS_full", "OLS_3", "PLS", "PCR_Linear",
-        "ENet", "GLM", "RandomForest", "GBRT",
-        "NN1", "NN2", "NN3", "NN4", "NN5",
-        "PCR_Huber", "LinearSVR", "OLS_3_old",
-    ]
+    preferred_order = eval_config.preferred_order
 
     available = table["model"].tolist()
     ordered = list(dict.fromkeys(
@@ -101,49 +94,17 @@ def r2_metrics_to_gu_table(
         }
         return "".join(replacements.get(c, c) for c in str(text))
 
-    default_labels = {
-        "OLS_full": "OLS",
-        "OLS_3": "OLS-3",
-        "PLS": "PLS",
-        "PCR_Linear": "PCR",
-        "RandomForest": "RF",
-        "GBRT": "GBRT",
-        "NN1": "NN1",
-        "NN2": "NN2",
-        "NN3": "NN3",
-        "NN4": "NN4",
-        "NN5": "NN5",
-        "PCR_Huber": "PCR",
-        "LinearSVR": "LinSVR",
-        "OLS_3_old": "Huber-3",
-    }
+    default_labels = eval_config.default_labels
     labels = {
         name: default_labels.get(name, escape_latex(name))
         for name in ordered
     }
-    labels.update(model_labels or {})
 
-    default_sublabels = {
-        "OLS_full": "+H",
-        "OLS_3": "+H",
-        "PLS": "",
-        "PCR_Linear": "",
-        "RandomForest": "",
-        "GBRT": "+H",
-        "NN1": "",
-        "NN2": "",
-        "NN3": "",
-        "NN4": "",
-        "NN5": "",
-        "PCR_Huber": "+H",
-        "LinearSVR": "",
-        "OLS_3_old": "sklearn",
-    }
+    default_sublabels = eval_config.default_sublabels
     sublabels = {
         name: default_sublabels.get(name, escape_latex(name))
         for name in ordered
     }
-    sublabels.update(model_labels or {})
 
     if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
         raise ValueError("Use a simple LaTeX label without special characters.")
@@ -160,14 +121,13 @@ def r2_metrics_to_gu_table(
 
     plot_models = [
         name for name in ordered
-        if name not in exclude_from_plot
-        and percent.loc[name, value_cols].notna().all()
+        if name not in eval_config.exclude_from_plot
     ]
 
-    excluded = [name for name in ordered if name in exclude_from_plot]
+    excluded = [name for name in ordered if name in eval_config.exclude_from_plot]
     incomplete = [
         name for name in ordered
-        if name not in exclude_from_plot and name not in plot_models
+        if name not in eval_config.exclude_from_plot and name not in plot_models
     ]
 
     lines = [
@@ -177,10 +137,19 @@ def r2_metrics_to_gu_table(
         (
             r"\caption{Monthly out-of-sample stock-level prediction "
             r"performance (percentage $R^2_{\mathrm{OOS}}$)}"
+            f": {escape_latex(sample_years)}"
         ),
         rf"\label{{{label}}}",
-        r"\resizebox{\textwidth}{!}{%",
-        r"\begin{tabular}{l" + "r" * len(ordered) + "}",
+        r"\begingroup",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\renewcommand{\arraystretch}{1.15}",
+        (
+            r"\begin{tabular*}{\textwidth}"
+            r"{@{\extracolsep{\fill}}l"
+            + "c" * len(ordered)
+            + r"@{}}"
+        ),
         r"\toprule",
         " & " + " & ".join(labels[name] for name in ordered) + r" \\",
         " & " + " & ".join(sublabels[name] for name in ordered) + r" \\",
@@ -189,21 +158,21 @@ def r2_metrics_to_gu_table(
         table_row(f"Top {subsample_size:,}", "r2_top"),
         table_row(f"Bottom {subsample_size:,}", "r2_bottom"),
         r"\bottomrule",
-        r"\end{tabular}%",
-        r"}",
+        r"\end{tabular*}",
+        r"\endgroup",
     ]
 
     if plot_models:
         ticks = ",".join(str(i) for i in range(len(plot_models)))
         tick_labels = ",".join(
-            "{" + labels[name] + "}" for name in plot_models
+            "{" + labels[name] + " " + sublabels[name] + "}" for name in plot_models
         )
 
         lines.extend([
             r"\par\medskip",
             r"\begin{tikzpicture}",
             r"\begin{axis}[",
-            r"width=0.96\textwidth,",
+            r"width=\linewidth,",
             r"height=6.5cm,",
             r"ybar=0pt,",
             r"bar width=5pt,",
@@ -254,7 +223,7 @@ def r2_metrics_to_gu_table(
         f"Top {subsample_size:,} and Bottom {subsample_size:,} denote "
         "the largest and smallest market-value stocks selected "
         "within each month, respectively. "
-        f"The out-of-sample period is {escape_latex(sample_label)}. "
+        f"The out-of-sample period is {escape_latex(sample_years)}. "
         "The lower panel compares the statistics reported above."
     )
 

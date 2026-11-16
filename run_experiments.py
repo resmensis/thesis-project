@@ -13,6 +13,7 @@ from config import (
     LoggingConfig,
     ExpandingWindowConfig,
     ModelSelectionConfig,
+    EvaluationConfig,
 )
 
 
@@ -33,9 +34,10 @@ def main():
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
     expand_cfg = ExpandingWindowConfig()
-    model_cfg = ModelSelectionConfig(run_all_models = True,
-                                     models_to_run= ["OLS_3", "OLS_3_old", "OLS_full", "PCR_Huber", "PCR_Linear"]
+    model_cfg = ModelSelectionConfig(run_all_models = False,
+                                     models_to_run= ["LinearSVR","GBRT"]
                                     )
+    eval_cfg = EvaluationConfig()
     # Set global seed ONCE at the start - ensures reproducibility across all runs
     set_global_seed(repro_cfg.random_state, repro_cfg.torch_deterministic)
 
@@ -71,7 +73,7 @@ def main():
     ensure_dir(cache_cfg.cache_dir)
 
     # ------------------------------------------------------------------
-    # 1. Build or load complete dataset
+    # 0. Paths
     # ------------------------------------------------------------------
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
     descriptives_path=cache_cfg.descriptives_dir
@@ -99,7 +101,12 @@ def main():
 
     predictions_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
     predictions_path = f"output/{predictions_window_path}/all_predictions.parquet" 
-    
+
+    visualization_path = f"output/{predictions_window_path}/visualization"
+
+    # ------------------------------------------------------------------
+    # 1. Build or load complete dataset
+    # ------------------------------------------------------------------
 
     if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
         cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
@@ -241,10 +248,9 @@ def main():
     evaluation = evaluate_predictions(
         predictions=predictions,
         regime_config=regime_cfg,
+        eval_config=eval_cfg,
         output_dir="output",
         n_quantiles=10,
-        dm_loss="squared_error",
-        horizon=1,
         save_outputs=True,
         feature_importance_dir=f"output/{predictions_window_path}/feature_importance" ,
     )

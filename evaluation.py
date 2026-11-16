@@ -178,81 +178,144 @@ def compute_model_r2_metrics(
 
 def compute_diebold_mariano_tests(
     predictions: pd.DataFrame,
-    loss: str = "squared_error",
-    horizon: int = 1,
+    model_order: list[str] | None = None,
+    nw_lags: int | None = None,
 ) -> pd.DataFrame:
     """
-    Compute Diebold-Mariano tests for every unique pair of models.
+    Pairwise DM tests on monthly cross-sectional mean squared-loss differences.
 
-    The null hypothesis is that both models have equal predictive accuracy.
+    Uses Bartlett-weighted Newey-West standard errors without a finite-sample
+    correction. Negative DM favors model_a.
 
-    Parameters
-    ----------
-    predictions : DataFrame
-        Wide prediction store with columns:
-        permno, date, excess_ret_total, mv, pred_<MODEL>.
+    nw_lags=None uses floor(4 * (T / 100)**(2 / 9)), capped at T - 1.
+    This bandwidth rule is an implementation choice, not specified in the
+    supplied Gu et al. excerpt.
 
-    loss : str
-        'squared_error' or 'absolute_error'.
-
-    horizon : int
-        Forecast horizon. Use 1 for monthly one-step-ahead forecasts.
-
-    Returns
-    -------
-    DataFrame
-        One row per model pair, with DM statistic and p-value.
+    Bonferroni adjustment covers all planned unique model pairs.
     """
+    required = ["year", "excess_ret_total"]
+    missing = set(required).difference(predictions.columns)
+    if missing:
+        raise KeyError(f"Missing columns: {sorted(missing)}")
+    if not predictions.columns.is_unique:
+        raise ValueError("Prediction column names must be unique.")
+    if nw_lags is not None and (
+        isinstance(nw_lags, (bool, np.bool_))
+        or not isinstance(nw_lags, (int, np.integer))
+        or nw_lags < 0
+    ):
+        raise ValueError("nw_lags must be a nonnegative integer or None.")
+
     model_cols = [
-        column for column in predictions.columns
-        if column.startswith("pred_")
+        col for col in predictions.columns
+        if isinstance(col, str) and col.startswith("pred_")
     ]
-
     if len(model_cols) < 2:
-        raise ValueError(
-            "At least two prediction columns are required for "
-            "Diebold-Mariano tests."
-        )
+        raise ValueError("At least two prediction models are required.")
 
-    if loss not in {"squared_error", "absolute_error"}:
-        raise ValueError(
-            "loss must be either 'squared_error' or 'absolute_error'."
-        )
+    preferred_order = model_order or [
+        "OLS_full", "OLS_3", "PLS", "PCR_Linear",
+        "RandomForest", "GBRT",
+        "NN1", "NN2", "NN3", "NN4", "NN5",
+        "PCR_Huber", "LinearSVR", "OLS_3_old",
+    ]
+    model_cols = list(dict.fromkeys(
+        [f"pred_{name}" for name in preferred_order
+         if f"pred_{name}" in model_cols]
+        + model_cols
+    ))
 
+    data = predictions[required + model_cols].copy()
+
+    years = pd.to_numeric(data["year"], errors="raise")
+    if (
+        years.isna().any()
+        or not np.isfinite(years.to_numpy(dtype=float)).all()
+        or (years % 1 != 0).any()
+    ):
+        raise ValueError("year must contain finite, nonmissing integer years.")
+
+    data["year"] = years.astype(int)
+
+    numeric_cols = ["excess_ret_total"] + model_cols
+    data[numeric_cols] = data[numeric_cols].apply(
+        pd.to_numeric, errors="raise"
+    )
+
+    n_tests = len(model_cols) * (len(model_cols) - 1) // 2
     rows = []
 
-    for model_a_col, model_b_col in combinations(model_cols, 2):
-        comparison = predictions[
-            ["permno", "date", "excess_ret_total", model_a_col, model_b_col]
-        ].dropna()
+    for model_a, model_b in combinations(model_cols, 2):
+        pair = data[["year", "excess_ret_total", model_a, model_b]]
+        values = pair[["excess_ret_total", model_a, model_b]].to_numpy(
+            dtype=float, na_value=np.nan
+        )
+        valid = np.isfinite(values).all(axis=1)
+        y, pred_a, pred_b = values[valid].T
 
-        if comparison.empty:
-            continue
+        with np.errstate(over="ignore", invalid="ignore"):
+            loss_diff = (y - pred_a) ** 2 - (y - pred_b) ** 2
 
-        y_true = comparison["excess_ret_total"]
-        pred_a = comparison[model_a_col]
-        pred_b = comparison[model_b_col]
+        if not np.isfinite(loss_diff).all():
+            raise ValueError(
+                f"Nonfinite squared-loss differences: {model_a}, {model_b}."
+            )
 
-        if loss == "squared_error":
-            losses_a = (y_true - pred_a) ** 2
-            losses_b = (y_true - pred_b) ** 2
-        else:
-            losses_a = (y_true - pred_a).abs()
-            losses_b = (y_true - pred_b).abs()
-
-        dm_result = diebold_mariano_test(
-            losses_a.to_numpy(),
-            losses_b.to_numpy(),
-            h=horizon,
+        yearly = (
+            pd.Series(loss_diff, index=pair.loc[valid, "year"])
+            .groupby(level=0, sort=True)
+            .mean()
         )
 
+        t = len(yearly)
+        dm = p_value = np.nan
+
+        if t >= 2:
+            expected = np.arange(yearly.index[0], yearly.index[-1] + 1)
+            if not np.array_equal(yearly.index.to_numpy(), expected):
+                raise ValueError(
+                    f"Internal missing years: {model_a}, {model_b}."
+                )
+
+            if nw_lags is not None and nw_lags >= t:
+                raise ValueError(
+                    f"nw_lags must be smaller than {t} for "
+                    f"{model_a}, {model_b}."
+                )
+
+            lags = (
+                min(int(np.floor(4 * (t / 100) ** (2 / 9))), t - 1)
+                if nw_lags is None else int(nw_lags)
+            )
+            d = yearly.to_numpy(dtype=float)
+            u = d - d.mean()
+
+            with np.errstate(over="ignore", invalid="ignore"):
+                long_run_variance = u @ u / t
+                for lag in range(1, lags + 1):
+                    weight = 1 - lag / (lags + 1)
+                    long_run_variance += (
+                        2 * weight * (u[lag:] @ u[:-lag]) / t
+                    )
+
+                se = (
+                    np.sqrt(long_run_variance / t)
+                    if long_run_variance > 0 else np.nan
+                )
+
+            if np.isfinite(se) and se > 0:
+                dm = float(d.mean() / se)
+                p_value = float(2 * stats.norm.sf(abs(dm)))
+
         rows.append({
-            "model_a": model_a_col.removeprefix("pred_"),
-            "model_b": model_b_col.removeprefix("pred_"),
-            "loss": loss,
-            "dm_statistic": dm_result["dm"],
-            "p_value": dm_result["p_value"],
-            "n_obs": len(comparison),
+            "model_a": model_a.removeprefix("pred_"),
+            "model_b": model_b.removeprefix("pred_"),
+            "dm_statistic": dm,
+            "p_value": p_value,
+            "p_value_bonferroni": (
+                np.minimum(n_tests * p_value, 1.0)
+            ),
+            "n_periods": t,
         })
 
     return pd.DataFrame(rows)
@@ -521,6 +584,7 @@ def build_ml_portfolios(
 
     return portfolio_returns, portfolio_metrics
 
+
 def compute_average_feature_importance(
     feature_importance_dir: str | Path,
     models: list[str] = ["RandomForest", "GBRT"],
@@ -602,10 +666,9 @@ def compute_average_feature_importance(
 def evaluate_predictions(
     predictions: pd.DataFrame,
     regime_config,
+    eval_config,
     output_dir: str | Path = "output",
     n_quantiles: int = 10,
-    dm_loss: str = "squared_error",
-    horizon: int = 1,
     save_outputs: bool = True,
     feature_importance_dir: str | Path | None = None,
 ) -> dict:
@@ -688,8 +751,6 @@ def evaluate_predictions(
 
     dm_tests = compute_diebold_mariano_tests(
         predictions=predictions,
-        loss=dm_loss,
-        horizon=horizon,
     )
     out_path_dm_tests = f"{output_dir}/{regime_config.mode}/dm_tests.csv"
     save_csv(dm_tests,out_path_dm_tests,enabled=save_outputs)

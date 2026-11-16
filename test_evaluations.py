@@ -13,6 +13,7 @@ from config import (
     LoggingConfig,
     ExpandingWindowConfig,
     ModelSelectionConfig,
+    EvaluationConfig,
 )
 
 from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
@@ -27,7 +28,7 @@ repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
 data_cfg = DataFilesConfig()
 run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
-regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
+regime_cfg = DataRegimeConfig(mode="coding", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
 grid_cfg = HyperGridConfig()
 freq_cfg = CharacteristicsFrequency()
 log_cfg = LoggingConfig()
@@ -35,6 +36,7 @@ expand_cfg = ExpandingWindowConfig()
 model_cfg = ModelSelectionConfig(run_all_models = False,
                                     models_to_run= ["OLS_3", "OLS_3_old", "OLS_full", "PCR_Huber", "PCR_Linear"]
                                 )
+eval_cfg = EvaluationConfig()
 
 
 complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
@@ -64,8 +66,10 @@ else:
 grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
 model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-predictions_window_path = f"{regime_cfg.mode}/{model_suffix}_{grid_suffix}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}"
+predictions_window_path = f"{regime_cfg.mode}" if regime_cfg.mode=="coding" else f"{regime_cfg.mode}/{feature_suffix}_{model_suffix}_{grid_suffix}" #/{model_suffix}_{grid_suffix}
 predictions_path = f"output/{predictions_window_path}/all_predictions.parquet" 
+
+visualization_path = f"output/{predictions_window_path}/visualization"
 
 
 
@@ -75,10 +79,16 @@ predictions = maybe_load_parquet(predictions_path, enabled=True)
 evaluation = evaluate_predictions(
     predictions=predictions,
     regime_config=regime_cfg,
+    eval_config=eval_cfg,
     output_dir="output",
     n_quantiles=10,
-    dm_loss="squared_error",
-    horizon=1,
     save_outputs=True,
     feature_importance_dir=f"output/{predictions_window_path}/feature_importance" ,
 )
+
+
+visualization = r2_metrics_to_gu_table(r2_metrics=evaluation["r2_metrics"],
+                                       eval_config=eval_cfg,
+                                       output_path=f"{visualization_path}/r2_extended.tex",
+                                       sample_years="1987 -- 2021",
+                                       label="tab:stock_prediction_performance_extended")

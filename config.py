@@ -340,3 +340,52 @@ class ModelSelectionConfig:
     run_all_models: bool = False  # If True, run all models (including LSTM) - DEFAULT
     models_to_run: Optional[List[str]] = field(default=None)  # Custom model selection (ignored if run_all_models=True)
     # models_to_run: List[str] = field(default_factory=lambda: ["OLS_3"])
+
+
+@dataclass
+class EvaluationConfig:
+
+    preferred_order: List[str] = field(default_factory=lambda: [
+        "OLS_full", "OLS_3", "PLS", "PCR_Linear",
+        "RandomForest", "GBRT",
+        "NN1", "NN2", "NN3", "NN4", "NN5",
+        "PCR_Huber", "LinearSVR", "OLS_3_old",
+    ])
+
+    default_labels: dict[str, str] = field(default_factory=lambda: {
+        "OLS_full": "OLS",
+        "OLS_3": "OLS-3",
+        "PLS": "PLS",
+        "PCR_Linear": "PCR",
+        "RandomForest": "RF",
+        "GBRT": "GBRT",
+        "NN1": "NN1",
+        "NN2": "NN2",
+        "NN3": "NN3",
+        "NN4": "NN4",
+        "NN5": "NN5",
+        "PCR_Huber": "PCR",
+        "LinearSVR": "LinSVR",
+        "OLS_3_old": "Huber-3",
+    })
+
+    default_sublabels: dict[str, str] = field(default_factory=lambda: {
+        "OLS_full": "+H",
+        "OLS_3": "+H",
+        "PLS": "",
+        "PCR_Linear": "",
+        "RandomForest": "",
+        "GBRT": "+H",
+        "NN1": "",
+        "NN2": "",
+        "NN3": "",
+        "NN4": "",
+        "NN5": "",
+        "PCR_Huber": "+H",
+        "LinearSVR": "",
+        "OLS_3_old": "sklearn",
+    })
+
+    exclude_from_plot: tuple[str, ...] = ("OLS_full",)
+
+    exclude_from_table: tuple[str, ...] = ("OLS_full","OLS_3_old")

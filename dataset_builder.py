@@ -348,6 +348,7 @@ def summary_stats_extended(
     
     return stats_df
 
+
 def plot_feature_correlation_heatmap(
     df: pd.DataFrame,
     feature_cols: list[str],
