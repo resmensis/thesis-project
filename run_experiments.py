@@ -239,7 +239,7 @@ def main():
         cache_config=cache_cfg,
         window_config=window_cfg,
         output_dir=pred_path,
-        models_to_run=models_to_run,  # Determined by ModelSelectionConfig
+        models_to_run=models_to_run,  
     )
     
     logger.info("Expanding window completed.")
