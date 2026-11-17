@@ -668,12 +668,10 @@ def run_pred_window(
         test_df=first_test_df,
     )    
     """
-    prediction_store = None
 
-    if all_predictions_path.exists():
-        prediction_store = load_or_initialize_prediction_store(
-            prediction_path=all_predictions_path,
-        )
+    prediction_store = load_or_initialize_prediction_store(
+        prediction_path=all_predictions_path,
+    )
 
     for split in iter_yearly_splits(
         df=feature_panel,

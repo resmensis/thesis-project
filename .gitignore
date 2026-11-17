@@ -15,3 +15,5 @@ run_thesis_gpu_rolling.sbatch
 
 output_hummel
 logs_hummel
+descriptives_hummel
+cache_hummel
