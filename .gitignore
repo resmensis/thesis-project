@@ -6,10 +6,12 @@ logs
 data
 descriptives
 tests
+sbatch_files
 
 run_thesis.sbatch
 run_thesis_gpu.sbatch
 run_thesis_std.sbatch
+run_thesis_gpu_rolling.sbatch
 
 output_hummel
 logs_hummel
