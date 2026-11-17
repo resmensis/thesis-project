@@ -5,10 +5,11 @@ output
 logs
 data
 descriptives
+tests
+
 run_thesis.sbatch
 run_thesis_gpu.sbatch
 run_thesis_std.sbatch
-tests
 
 output_hummel
 logs_hummel

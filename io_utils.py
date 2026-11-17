@@ -138,3 +138,44 @@ def setup_project_logger(
 
 def get_logger(logger_name: str = "eap_ml"):
     return logging.getLogger(logger_name)
+
+
+from pathlib import Path
+
+
+def has_expected_prediction_files(
+    predictions_dir: str | Path,
+    expected_count: int = 35,
+    suffix: str | None = None,
+) -> bool:
+    """Return True if the predictions directory contains exactly the expected number of files.
+
+    Parameters
+    ----------
+    predictions_dir:
+        Path to the directory containing yearly prediction files.
+    expected_count:
+        Required number of prediction files.
+    suffix:
+        Optional file extension filter, e.g. ".parquet" or ".csv".
+        If None, all regular files are counted.
+    """
+    predictions_path = Path(predictions_dir)
+
+    if not predictions_path.exists() or not predictions_path.is_dir():
+        return False
+
+    if suffix is None:
+        files = [path for path in predictions_path.iterdir() if path.is_file()]
+    else:
+        normalized_suffix = suffix.lower()
+        if not normalized_suffix.startswith("."):
+            normalized_suffix = f".{normalized_suffix}"
+
+        files = [
+            path
+            for path in predictions_path.iterdir()
+            if path.is_file() and path.suffix.lower() == normalized_suffix
+        ]
+
+    return len(files) == expected_count

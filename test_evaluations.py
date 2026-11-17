@@ -27,7 +27,7 @@ from visualization import  r2_metrics
 repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
 data_cfg = DataFilesConfig()
-run_ctrl_cfg = RunControlConfig(feature_panel_only=True) 
+run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=False) 
 regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
 grid_cfg = HyperGridConfig()
 freq_cfg = CharacteristicsFrequency()
@@ -77,6 +77,7 @@ pred_window_path = (
 )
 pred_path = f"output/{pred_window_path}"
 all_predictions_path = f"{pred_path}/all_predictions.parquet" 
+yearly_predictions_path = f"{pred_path}/predictions"
 
 evaluation_path = f"{pred_path}/evaluation"
 
@@ -107,3 +108,5 @@ r2_metrics_table = r2_metrics(r2_metrics=evaluation["r2_metrics"],
                                        sample_years="1987 -- 2021",
                                        label="tab:stock_prediction_performance_extended")
 """
+
+

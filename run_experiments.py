@@ -19,7 +19,7 @@ from config import (
 )
 
 
-from io_utils import ensure_dir, set_global_seed, setup_project_logger, maybe_load_parquet, maybe_load_pickle
+from io_utils import ensure_dir, set_global_seed, setup_project_logger, maybe_load_parquet, maybe_load_pickle, has_expected_prediction_files
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from prediction_window import run_pred_window
@@ -30,7 +30,7 @@ def main():
     repro_cfg = ReproducibilityConfig(random_state=42)
     cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
     data_cfg = DataFilesConfig()
-    run_ctrl_cfg = RunControlConfig(feature_panel_only=False) 
+    run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=False) 
     regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
@@ -112,28 +112,49 @@ def main():
         else f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window/{feature_suffix}_{model_suffix}_{grid_suffix}"
     )
     pred_path = f"output/{pred_window_path}"
-    all_predictions_path = f"{pred_path}/all_predictions.parquet" 
+    all_predictions_path = f"{pred_path}/all_predictions.parquet"
+    yearly_predictions_path = f"{pred_path}/predictions"
 
     visualization_path = f"{pred_path}/visualization"
 
     # ------------------------------------------------------------------
     # 1. Build or load complete dataset
     # ------------------------------------------------------------------
+    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+        pass
+    else:
+        if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
+            cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
+            cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
 
-    if cache_cfg.enabled and not cache_cfg.force_rebuild_dataset:
-        cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
-        cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
-
-        cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
-        
-        if cached_panel is not None and cached_cols is not None and not cache_cfg.force_rebuild_feature_set:
-                logger.info(f"Feature panel and cols found in cashe. Skipping building/loading dataset.")
-        elif cached_dataset is not None:
-            logger.info(f"Loading cached dataset from {complete_dataset_path}")
-            complete = cached_dataset
-            logger.info(f"Complete dataset shape: {complete.shape}")
+            cached_dataset = maybe_load_parquet(complete_dataset_path, enabled=True)
+            
+            if cached_panel is not None and cached_cols is not None and not cache_cfg.force_rebuild_feature_set:
+                    logger.info(f"Feature panel and cols found in cashe. Skipping building/loading dataset.")
+            elif cached_dataset is not None:
+                logger.info(f"Loading cached dataset from {complete_dataset_path}")
+                complete = cached_dataset
+                logger.info(f"Complete dataset shape: {complete.shape}")
+            else:
+                logger.info("Building complete dataset (no cache found).")
+                complete = build_complete_dataset(
+                    datashare_path=data_cfg.datashare_path,
+                    crsp_path=data_cfg.crsp_monthly_path,
+                    macro_path=data_cfg.macro_path,
+                    out_path=complete_dataset_path,
+                    descriptives_path=descriptives_path,
+                    cache_enabled=cache_cfg.enabled,
+                    possible_crsp_cols=data_cfg.possible_crsp_cols,
+                    possible_marco_cols=data_cfg.possible_marco_cols,
+                    cols_chara=data_cfg.chara_cols,
+                    cols_vars_monthly=freq_cfg.cols_vars_monthly,
+                    cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
+                    cols_vars_annual=freq_cfg.cols_vars_annual,
+                    random_state=random_state
+                )
+                logger.info(f"Complete dataset shape: {complete.shape}")
         else:
-            logger.info("Building complete dataset (no cache found).")
+            logger.info("Building complete dataset (cache disabled or force_refit).")
             complete = build_complete_dataset(
                 datashare_path=data_cfg.datashare_path,
                 crsp_path=data_cfg.crsp_monthly_path,
@@ -150,46 +171,43 @@ def main():
                 random_state=random_state
             )
             logger.info(f"Complete dataset shape: {complete.shape}")
-    else:
-        logger.info("Building complete dataset (cache disabled or force_refit).")
-        complete = build_complete_dataset(
-            datashare_path=data_cfg.datashare_path,
-            crsp_path=data_cfg.crsp_monthly_path,
-            macro_path=data_cfg.macro_path,
-            out_path=complete_dataset_path,
-            descriptives_path=descriptives_path,
-            cache_enabled=cache_cfg.enabled,
-            possible_crsp_cols=data_cfg.possible_crsp_cols,
-            possible_marco_cols=data_cfg.possible_marco_cols,
-            cols_chara=data_cfg.chara_cols,
-            cols_vars_monthly=freq_cfg.cols_vars_monthly,
-            cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-            cols_vars_annual=freq_cfg.cols_vars_annual,
-            random_state=random_state
-        )
-        logger.info(f"Complete dataset shape: {complete.shape}")
 
 
-    # Check if we should stop after dataset creation
-    if run_ctrl_cfg.dataset_creation_only:
-        print("Dataset creation only mode is ON.")
-        print(f"Complete dataset created and cached at: {complete_dataset_path}")
-        return
+        # Check if we should stop after dataset creation
+        if run_ctrl_cfg.dataset_creation_only:
+            print("Dataset creation only mode is ON.")
+            print(f"Complete dataset created and cached at: {complete_dataset_path}")
+            return
 
     
     # ------------------------------------------------------------------
     # 2. Build or load feature panel
     # ------------------------------------------------------------------  
-    if cache_cfg.enabled and not cache_cfg.force_rebuild_feature_set:
-        cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
-        cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
-        
-        if cached_panel is not None and cached_cols is not None:
-            logger.info(f"Loading cached feature panel from {feature_panel_path}")
-            feature_panel = cached_panel
-            feature_cols = cached_cols
+    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+        pass
+    else:
+        if cache_cfg.enabled and not cache_cfg.force_rebuild_feature_set:
+            cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
+            cached_cols = maybe_load_pickle(feature_cols_path, enabled=True)
+            
+            if cached_panel is not None and cached_cols is not None:
+                logger.info(f"Loading cached feature panel from {feature_panel_path}")
+                feature_panel = cached_panel
+                feature_cols = cached_cols
+            else:
+                logger.info("Building feature panel (no cache found).")
+                feature_panel, feature_cols = build_feature_panel(
+                    complete,
+                    out_path_panel=feature_panel_path,
+                    out_path_cols=feature_cols_path,
+                    descriptives_path=descriptives_path,
+                    random_state=random_state,
+                    regime_config=regime_cfg,
+                    data_config=data_cfg,
+                    save_feature_panel=cache_cfg.save_feature_panel,
+                )
         else:
-            logger.info("Building feature panel (no cache found).")
+            logger.info("Building feature panel (cache disabled or force_refit).")
             feature_panel, feature_cols = build_feature_panel(
                 complete,
                 out_path_panel=feature_panel_path,
@@ -200,54 +218,47 @@ def main():
                 data_config=data_cfg,
                 save_feature_panel=cache_cfg.save_feature_panel,
             )
-    else:
-        logger.info("Building feature panel (cache disabled or force_refit).")
-        feature_panel, feature_cols = build_feature_panel(
-            complete,
-            out_path_panel=feature_panel_path,
-            out_path_cols=feature_cols_path,
-            descriptives_path=descriptives_path,
-            random_state=random_state,
-            regime_config=regime_cfg,
-            data_config=data_cfg,
-            save_feature_panel=cache_cfg.save_feature_panel,
-        )
-    
-    logger.info(f"Feature panel shape: {feature_panel.shape}")
-    logger.info(f"Number of feature columns: {len(feature_cols)}")
+        
+        logger.info(f"Feature panel shape: {feature_panel.shape}")
+        logger.info(f"Number of feature columns: {len(feature_cols)}")
 
-    # Check if we should stop after feature panel creation
-    if run_ctrl_cfg.feature_panel_only:
-        print("Feature panel only mode is ON.")
-        print(f"Feature panel created and cached at: {feature_panel_path}")
-        print(f"Feature columns cached at: {feature_cols_path}")
-        return
+        # Check if we should stop after feature panel creation
+        if run_ctrl_cfg.feature_panel_only:
+            print("Feature panel only mode is ON.")
+            print(f"Feature panel created and cached at: {feature_panel_path}")
+            print(f"Feature columns cached at: {feature_cols_path}")
+            return
 
     # ------------------------------------------------------------------
     # 3. Run prediction window forecasting
     # ------------------------------------------------------------------
-    logger.info("Starting expanding window forecasting.")
+    logger.info(f"Starting windowized forecasting.")
+    logger.info(f"Running unified {window_cfg.window_type} window (1987-2021) with evaluation at 2016 and 2021")
+
+    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+        pass
+    else:
+        predictions = run_pred_window(
+            feature_panel=feature_panel,
+            feature_cols=feature_cols,
+            regime_config=regime_cfg,
+            grid_config=grid_cfg,
+            repro_config=repro_cfg,
+            cache_config=cache_cfg,
+            window_config=window_cfg,
+            output_dir=pred_path,
+            models_to_run=models_to_run,  
+        )
+        
+        logger.info(f"{window_cfg.window_type} window completed.")
+        logger.info(f"Total predictions: {len(predictions)}")
     
 
-    logger.info("Running unified expanding window (1987-2021) with evaluation at 2016 and 2021")
-    
-    predictions = run_pred_window(
-        feature_panel=feature_panel,
-        feature_cols=feature_cols,
-        regime_config=regime_cfg,
-        grid_config=grid_cfg,
-        repro_config=repro_cfg,
-        cache_config=cache_cfg,
-        window_config=window_cfg,
-        output_dir=pred_path,
-        models_to_run=models_to_run,  
-    )
-    
-    logger.info("Expanding window completed.")
-    logger.info(f"Total predictions: {len(predictions)}")
-    
-
-
+    # ------------------------------------------------------------------
+    # 4. Run prediction window forecasting
+    # ------------------------------------------------------------------
+    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+        predictions = maybe_load_parquet(all_predictions_path, enabled=True)
 
     evaluation = evaluate_predictions(
         predictions=predictions,
