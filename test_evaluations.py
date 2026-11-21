@@ -25,25 +25,6 @@ from visualization import  r2_metrics
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
-cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
-data_cfg = DataFilesConfig()
-run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=False) 
-regime_cfg = DataRegimeConfig(mode="coding", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
-grid_cfg = HyperGridConfig()
-freq_cfg = CharacteristicsFrequency()
-log_cfg = LoggingConfig()
-window_cfg = WindowConfig(window_type="expanding")
-model_cfg = ModelSelectionConfig(run_all_models = True,
-                                    models_to_run= ["LinearSVR","GBRT"]
-                                )
-eval_cfg = EvaluationConfig()
-
-
-
-
-
-
-repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
 data_cfg = DataFilesConfig()
 run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=True) 

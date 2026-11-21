@@ -136,7 +136,7 @@ def r2_metrics(
         r"\centering",
         r"\begin{threeparttable}",
         (
-            r"\caption{Monthly out-of-sample stock-level prediction "
+            r"\caption{Monthly out-of-sample stock-level prediction " #
             r"performance (percentage $R^2_{\mathrm{OOS}}$)}"
             f": {escape_latex(sample_years)}"
         ),

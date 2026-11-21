@@ -1289,6 +1289,7 @@ def evaluate_predictions(
         "dm_tests": dm_tests,
         "portfolio_returns": portfolio_returns,
         "portfolio_metrics": portfolio_metrics,
+        "fama_french_portfolio_returns": fama_french_portfolio_returns,
         "feature_importance": feature_importance_results,
     }
 
