@@ -23,7 +23,7 @@ from io_utils import ensure_dir, set_global_seed, setup_project_logger, maybe_lo
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from prediction_window import run_pred_window
-from evaluation import evaluate_predictions
+from evaluation import evaluate_predictions, create_evaulation_dataset
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
-    window_cfg = WindowConfig(window_type="rolling")
+    window_cfg = WindowConfig(window_type="expanding")
     model_cfg = ModelSelectionConfig(run_all_models = True,
                                      models_to_run= []
                                     )
@@ -79,6 +79,7 @@ def main():
     # 0. Paths
     # ------------------------------------------------------------------
     complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
+    fama_french_charas_path=f"{cache_cfg.cache_dir}/fama_french_charas.parquet"
     descriptives_path=cache_cfg.descriptives_dir
 
     industry_suffix = "wDummies" if regime_cfg.include_industry_dummies else "noDummies"
@@ -113,6 +114,7 @@ def main():
     )
     pred_path = f"output/{pred_window_path}"
     all_predictions_path = f"{pred_path}/all_predictions.parquet"
+    all_predictions_with_fama_path = f"{pred_path}/all_predictions_fama_french.parquet"
     yearly_predictions_path = f"{pred_path}/predictions"
 
     visualization_path = f"{pred_path}/visualization"
@@ -142,14 +144,12 @@ def main():
                     crsp_path=data_cfg.crsp_monthly_path,
                     macro_path=data_cfg.macro_path,
                     out_path=complete_dataset_path,
+                    fama_french_charas_path=fama_french_charas_path,
                     descriptives_path=descriptives_path,
                     cache_enabled=cache_cfg.enabled,
                     possible_crsp_cols=data_cfg.possible_crsp_cols,
                     possible_marco_cols=data_cfg.possible_marco_cols,
                     cols_chara=data_cfg.chara_cols,
-                    cols_vars_monthly=freq_cfg.cols_vars_monthly,
-                    cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-                    cols_vars_annual=freq_cfg.cols_vars_annual,
                     random_state=random_state
                 )
                 logger.info(f"Complete dataset shape: {complete.shape}")
@@ -160,14 +160,12 @@ def main():
                 crsp_path=data_cfg.crsp_monthly_path,
                 macro_path=data_cfg.macro_path,
                 out_path=complete_dataset_path,
+                fama_french_charas_path=fama_french_charas_path,
                 descriptives_path=descriptives_path,
                 cache_enabled=cache_cfg.enabled,
                 possible_crsp_cols=data_cfg.possible_crsp_cols,
                 possible_marco_cols=data_cfg.possible_marco_cols,
                 cols_chara=data_cfg.chara_cols,
-                cols_vars_monthly=freq_cfg.cols_vars_monthly,
-                cols_vars_quarterly=freq_cfg.cols_vars_quarterly,
-                cols_vars_annual=freq_cfg.cols_vars_annual,
                 random_state=random_state
             )
             logger.info(f"Complete dataset shape: {complete.shape}")
@@ -255,16 +253,31 @@ def main():
     
 
     # ------------------------------------------------------------------
-    # 4. Run prediction window forecasting
+    # 4. Run prediction evakuation
     # ------------------------------------------------------------------
-    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
-        predictions = maybe_load_parquet(all_predictions_path, enabled=True)
+    if not Path(all_predictions_with_fama_path).exists():
+        if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+            predictions = maybe_load_parquet(all_predictions_path, enabled=True)
+            fama_french_charas_df = maybe_load_parquet(fama_french_charas_path, enabled=True)
+
+            all_predictions_with_fama = create_evaulation_dataset(
+                predictions=predictions,
+                fama_french_charas_df=fama_french_charas_df,
+                output_dir=pred_path
+            )
+        else: 
+            raise KeyError("missing data")
+    else:
+        all_predictions_with_fama = maybe_load_parquet(all_predictions_with_fama_path, enabled=True)
+
+
+        
 
     evaluation = evaluate_predictions(
-        predictions=predictions,
+        predictions=all_predictions_with_fama,
         regime_config=regime_cfg,
         eval_config=eval_cfg,
-        output_dir="output",
+        output_dir=pred_path,
         n_quantiles=10,
         save_outputs=True,
         feature_importance_dir=f"{pred_path}/feature_importance" ,
