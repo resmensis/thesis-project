@@ -421,13 +421,11 @@ def build_complete_dataset(
     crsp_path: str,
     macro_path: str,
     out_path: str,
+    fama_french_charas_path: str,
     descriptives_path: str,
     possible_crsp_cols: list[str],
     possible_marco_cols: list[str],
     cols_chara: list[str],
-    cols_vars_monthly: list[str],
-    cols_vars_quarterly: list[str],
-    cols_vars_annual: list [str],
     random_state: int,
     cache_enabled: bool    
 ):
@@ -601,8 +599,16 @@ def build_complete_dataset(
         output_name="summary_imputed",
     )
 
-    """
 
+    # ------------------------------------------------------------------
+    # Fama-French Characteristics 
+    # ------------------------------------------------------------------
+    fama_french_charas = merged[["permno","date","mvel1","bm","operprof","agr","mom12m"]]
+    save_parquet(fama_french_charas, fama_french_charas_path, enabled=cache_enabled)
+
+
+
+    """
     # ------------------------------------------------------------------
     # Temporal shifts 
     # ------------------------------------------------------------------
@@ -665,7 +671,7 @@ def build_complete_dataset(
     # Drop NaN
     merged = merged.dropna(subset=cols_chara_and_excess_ret_total)
 
-
+    """
     # Visualisation of missingness after temporal cuts
     missing_after_drop = compute_missingness_for_characteristics(merged, cols_chara_and_excess_ret_total)
 
@@ -684,6 +690,7 @@ def build_complete_dataset(
         title="Missing Data Percentage: Before vs After Imputation vs After Temporal Reduction",
     )
     logger.debug(f"Saved missingness comparison plot: {comparison_jpg}")
+    """
 
     summary_stats_extended(
         merged,
@@ -691,7 +698,6 @@ def build_complete_dataset(
         output_path=descriptives_path,
         output_name="summary_final_NaN_dropped"
     )
-
 
     # ------------------------------------------------------------------
     # Quantile Transformation 

@@ -16,11 +16,11 @@ from config import (
     EvaluationConfig,
 )
 
-from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle
+from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_logger, maybe_load_parquet, save_pickle, maybe_load_pickle, has_expected_prediction_files
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from prediction_window import run_pred_window
-from evaluation import evaluate_predictions
+from evaluation import evaluate_predictions, create_evaulation_dataset
 from visualization import  r2_metrics
 
 
@@ -76,7 +76,8 @@ pred_window_path = (
     else f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window/{feature_suffix}_{model_suffix}_{grid_suffix}"
 )
 pred_path = f"output/{pred_window_path}"
-all_predictions_path = f"{pred_path}/all_predictions.parquet" 
+all_predictions_path = f"{pred_path}/all_predictions.parquet"
+all_predictions_with_fama_path = f"{pred_path}/all_predictions_fama_french.parquet"
 yearly_predictions_path = f"{pred_path}/predictions"
 
 evaluation_path = f"{pred_path}/evaluation"
@@ -86,20 +87,35 @@ visualization_path = f"{pred_path}/visualization"
 # 
 # ------------------------------------------------------------------
 
+if not Path(all_predictions_with_fama_path).exists():
+    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+        predictions = maybe_load_parquet(all_predictions_path, enabled=True)
+        fama_french_charas_df = maybe_load_parquet(fama_french_charas_path, enabled=True)
+
+        all_predictions_with_fama = create_evaulation_dataset(
+            predictions=predictions,
+            fama_french_charas_df=fama_french_charas_df,
+        )
+else:
+    all_predictions_with_fama = maybe_load_parquet(all_predictions_with_fama_path, enabled=True)
 
 
-predictions = maybe_load_parquet(all_predictions_path, enabled=True)
-
+    
 
 evaluation = evaluate_predictions(
-    predictions=predictions,
+    predictions=all_predictions_with_fama,
     regime_config=regime_cfg,
     eval_config=eval_cfg,
-    output_dir=evaluation_path,
+    output_dir="output",
     n_quantiles=10,
     save_outputs=True,
     feature_importance_dir=f"{pred_path}/feature_importance" ,
 )
+
+
+
+
+
 
 """
 r2_metrics_table = r2_metrics(r2_metrics=evaluation["r2_metrics"],

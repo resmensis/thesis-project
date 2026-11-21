@@ -2,6 +2,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
+from typing import Dict, Any, Tuple, List, Optional, Literal
 
 from itertools import combinations
 from scipy import stats
@@ -127,9 +128,9 @@ def compute_model_r2_metrics(
         model_name = model_col.removeprefix("pred_")
 
         df = predictions[
-            ["permno", "date", "excess_ret_total", "mv", model_col]
+            ["permno", "date", "excess_ret_total", "mvel1", model_col]
         ].dropna(
-            subset=["excess_ret_total", "mv", model_col]
+            subset=["excess_ret_total", "mvel1", model_col]
         )
 
         overall_r2 = gu_pred_r2(
@@ -141,7 +142,7 @@ def compute_model_r2_metrics(
         bottom_frames = []
 
         for _, month_df in df.groupby("date"):
-            month_df = month_df.sort_values("mv", ascending=False)
+            month_df = month_df.sort_values("mvel1", ascending=False)
 
             top_frames.append(month_df.head(subsample_size))
             bottom_frames.append(month_df.tail(subsample_size))
@@ -420,7 +421,7 @@ def build_ml_portfolios(
         "permno",
         "date",
         "excess_ret_total",
-        "mv",
+        "mvel1",
     ]
 
     missing = [
@@ -451,10 +452,10 @@ def build_ml_portfolios(
         df = predictions[
             required_cols + [model_col]
         ].dropna(
-            subset=["excess_ret_total", "mv", model_col]
+            subset=["excess_ret_total", "mvel1", model_col]
         ).copy()
 
-        df = df[df["mv"] > 0]
+        df = df[df["mvel1"] > 0]
 
         for date, month_df in df.groupby("date"):
             if len(month_df) < n_quantiles:
@@ -485,11 +486,11 @@ def build_ml_portfolios(
 
                 realized_vw = np.average(
                     portfolio_df["excess_ret_total"],
-                    weights=portfolio_df["mv"],
+                    weights=portfolio_df["mvel1"],
                 )
                 predicted_vw = np.average(
                     portfolio_df[model_col],
-                    weights=portfolio_df["mv"],
+                    weights=portfolio_df["mvel1"],
                 )
 
                 realized_ew = portfolio_df["excess_ret_total"].mean()
@@ -522,19 +523,19 @@ def build_ml_portfolios(
 
             realized_vw_low = np.average(
                 low_df["excess_ret_total"],
-                weights=low_df["mv"],
+                weights=low_df["mvel1"],
             )
             realized_vw_high = np.average(
                 high_df["excess_ret_total"],
-                weights=high_df["mv"],
+                weights=high_df["mvel1"],
             )
             predicted_vw_low = np.average(
                 low_df[model_col],
-                weights=low_df["mv"],
+                weights=low_df["mvel1"],
             )
             predicted_vw_high = np.average(
                 high_df[model_col],
-                weights=high_df["mv"],
+                weights=high_df["mvel1"],
             )
 
             realized_ew_low = low_df["excess_ret_total"].mean()
@@ -663,6 +664,30 @@ def compute_average_feature_importance(
     return results
 
 
+def create_evaulation_dataset(
+        predictions: pd.DataFrame,
+        fama_french_charas_df: pd.DataFrame,
+        output_dir: str | Path = "output",
+        save_outputs: bool = True
+) -> pd.DataFrame:
+
+
+    predictions = predictions.drop(columns=[
+            "mv"
+            ])
+
+    df = predictions.merge(
+        fama_french_charas_df,
+        on=["permno", "date"],
+        how="inner",
+        # validate="one_to_one",
+    )
+    out_path = f"{output_dir}/all_predictions_fama_french.parquet"
+    save_parquet(df,out_path,enabled=save_outputs)
+
+    return df
+
+
 def evaluate_predictions(
     predictions: pd.DataFrame,
     regime_config,
@@ -679,10 +704,10 @@ def evaluate_predictions(
     ----------
     predictions : DataFrame
         Output of run_expanding_window(). Must contain:
-        permno, date, excess_ret_total, mv, and pred_<MODEL> columns.
+        permno, date, excess_ret_total, mvel1, and pred_<MODEL> columns.
 
     regime_config : DataRegimeConfig
-        Determines the number of stocks in top/bottom mv subsamples.
+        Determines the number of stocks in top/bottom mvel1 subsamples.
 
     benchmark_model : str, optional
         If provided, Diebold-Mariano tests compare every other model
@@ -706,7 +731,7 @@ def evaluate_predictions(
         "permno",
         "date",
         "excess_ret_total",
-        "mv",
+        "mvel1",
     ]
 
     missing = [
@@ -759,6 +784,7 @@ def evaluate_predictions(
 
     dm_tests = compute_diebold_mariano_tests(
         predictions=predictions,
+        model_order=eval_config.preferred_order,
     )
     out_path_dm_tests = f"{output_dir}/dm_tests.csv"
     save_csv(dm_tests,out_path_dm_tests,enabled=save_outputs)
@@ -807,3 +833,4 @@ def evaluate_predictions(
         "portfolio_metrics": portfolio_metrics,
         "feature_importance": feature_importance_results,
     }
+
