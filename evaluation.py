@@ -671,10 +671,11 @@ def create_evaulation_dataset(
         save_outputs: bool = True
 ) -> pd.DataFrame:
 
+    cols_to_drop = ["mv"]
+    cols_to_drop = [col for col in cols_to_drop if col in predictions.columns]
 
-    predictions = predictions.drop(columns=[
-            "mv"
-            ])
+    if cols_to_drop:
+        predictions = predictions.drop(columns=cols_to_drop)
 
     df = predictions.merge(
         fama_french_charas_df,

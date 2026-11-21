@@ -540,10 +540,12 @@ def build_complete_dataset(
     # ------------------------------------------------------------------
     # drop columns
     # ------------------------------------------------------------------    
-    
-    merged = merged.drop(columns=[
-        "ret", "dlret", "rf", "prc", "shrout"
-        ])
+
+    cols_to_drop = ["ret", "dlret", "rf", "prc", "shrout"]
+    cols_to_drop = [col for col in cols_to_drop if col in merged.columns]
+
+    if cols_to_drop:
+        merged = merged.drop(columns=cols_to_drop)
     
     # ------------------------------------------------------------------
     # Missingness visualisation and imputation
