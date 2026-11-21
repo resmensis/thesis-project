@@ -583,6 +583,10 @@ def build_ml_portfolios(
         portfolio_returns=portfolio_returns,
     )
 
+    portfolio_returns["portfolio"] = (
+        portfolio_returns["portfolio"].astype("string")
+    )
+
     return portfolio_returns, portfolio_metrics
 
 
@@ -662,6 +666,438 @@ def compute_average_feature_importance(
     )
 
     return results
+
+
+def compute_fama_french_portfolio_metrics(
+    portfolio_returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute portfolio-level out-of-sample R2 using gu_pred_r2().
+
+    Returns one row per panel, family, portfolio, model, and
+    weighting scheme.
+
+    R2 is stored as a decimal, consistently with the project's
+    existing model R2 metrics.
+
+    Only months with both finite realized and predicted returns
+    enter the calculation.
+    """
+    group_cols = [
+        "panel",
+        "family",
+        "portfolio",
+        "model",
+        "weighting",
+    ]
+    return_cols = [
+        "realized_return",
+        "predicted_return",
+    ]
+    output_cols = [*group_cols, "r2"]
+
+    required = [*group_cols, "date", *return_cols]
+    missing = sorted(set(required).difference(portfolio_returns.columns))
+
+    if missing:
+        raise KeyError(
+            f"portfolio_returns is missing required columns: {missing}"
+        )
+
+    if portfolio_returns.empty:
+        return pd.DataFrame(columns=output_cols)
+
+    if portfolio_returns[group_cols + ["date"]].isna().any().any():
+        raise ValueError(
+            "Portfolio identifiers and dates must not be missing."
+        )
+
+    if portfolio_returns.duplicated(
+        [*group_cols, "date"]
+    ).any():
+        raise ValueError(
+            "Expected one observation per portfolio, model, "
+            "weighting scheme, and date."
+        )
+
+    rows = []
+
+    for keys, group in portfolio_returns.groupby(
+        group_cols,
+        sort=False,
+        observed=True,
+    ):
+        values = (
+            group[return_cols]
+            .apply(pd.to_numeric, errors="raise")
+            .to_numpy(dtype=float, na_value=np.nan)
+        )
+
+        valid = np.isfinite(values).all(axis=1)
+        paired_values = values[valid]
+
+        if len(paired_values):
+            r2 = gu_pred_r2(
+                paired_values[:, 0],
+                paired_values[:, 1],
+            )
+        else:
+            r2 = np.nan
+
+        rows.append({
+            **dict(zip(group_cols, keys)),
+            "r2": r2,
+        })
+
+    return pd.DataFrame(rows, columns=output_cols)
+
+
+def build_fama_french_portfolios(
+    predictions: pd.DataFrame,
+    *,
+    smb_definition: str = "ff5",
+    output_dir: str | Path = "output",
+    save_outputs: bool = True,
+) -> pd.DataFrame:
+    """
+    Build monthly characteristic-sorted portfolio proxies and forecasts.
+
+    Produces:
+        - 24 size x characteristic component portfolios
+        - SMB, HML, RMW, CMA, UMD
+
+    Important
+    ---------
+    This is a monthly-sort approximation using the available evaluation
+    universe, not an exact recreation of official French portfolios.
+
+    Inputs must already be aligned to the return month:
+        excess_ret_total and pred_* refer to the same realized return.
+        mvel1 and sorting characteristics must be known ex ante.
+
+    mvel1 must be positive, unscaled lagged market equity.
+
+    Missing returns or predictions do not change portfolio membership.
+    Instead, the affected aggregate return is NaN.
+
+    Parameters
+    ----------
+    smb_definition:
+        "ff3": SMB from the six size/value portfolios.
+        "ff5": Average of size/value, size/profitability,
+               and size/investment SMB.
+
+    Returns
+    -------
+    DataFrame
+        Monthly portfolio returns in long format.
+
+        n_positions counts component positions for factors; a stock
+        appearing in multiple component portfolios can be counted
+        more than once.
+    """
+    if smb_definition not in {"ff3", "ff5"}:
+        raise ValueError("smb_definition must be 'ff3' or 'ff5'.")
+
+    if not predictions.columns.is_unique:
+        raise ValueError("Input column names must be unique.")
+
+    characteristics = ["bm", "operprof", "agr", "mom12m"]
+    required = [
+        "permno", "date", "excess_ret_total", "mvel1",
+        *characteristics,
+    ]
+    missing = sorted(set(required).difference(predictions.columns))
+    if missing:
+        raise KeyError(f"Missing required columns: {missing}")
+
+    model_cols = [
+        col for col in predictions.columns
+        if isinstance(col, str) and col.startswith("pred_")
+    ]
+    if not model_cols:
+        raise ValueError("No pred_* columns found.")
+
+    data = predictions[required + model_cols].copy()
+
+    data["date"] = (
+        pd.to_datetime(data["date"], errors="raise")
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+
+    if data[["permno", "date"]].isna().any().any():
+        raise ValueError("permno and date must not be missing.")
+
+    if data.duplicated(["permno", "date"]).any():
+        raise ValueError(
+            "Input must have one observation per permno and month."
+        )
+
+    numeric_cols = [
+        "excess_ret_total", "mvel1",
+        *characteristics, *model_cols,
+    ]
+    data[numeric_cols] = data[numeric_cols].apply(
+        pd.to_numeric, errors="raise"
+    )
+    data[numeric_cols] = data[numeric_cols].replace(
+        [np.inf, -np.inf], np.nan
+    )
+
+    data = data.loc[data["mvel1"].gt(0)].copy()
+    if data.empty:
+        raise ValueError("No observations with positive finite mvel1.")
+
+    # Low, middle, high characteristic labels.
+    specifications = {
+        "value": ("bm", ("growth", "neutral", "value"), "HML"),
+        "profitability": (
+            "operprof", ("weak", "neutral", "robust"), "RMW"
+        ),
+        "investment": (
+            "agr", ("conservative", "neutral", "aggressive"), "CMA"
+        ),
+        "momentum": ("mom12m", ("down", "medium", "up"), "UMD"),
+    }
+
+    rows = []
+
+    def aggregate(values, weights):
+        finite = np.isfinite(values)
+        coverage = float(weights[finite].sum())
+        result = (
+            float(weights @ values)
+            if finite.all()
+            else np.nan
+        )
+        return result, coverage
+
+    for date, month in data.groupby("date", sort=True):
+        size_breakpoint = month["mvel1"].median()
+
+        for family, (characteristic, labels, factor) in (
+            specifications.items()
+        ):
+            eligible = month.loc[
+                month[characteristic].notna()
+            ].copy()
+
+            if eligible.empty:
+                continue
+
+            low_cut, high_cut = eligible[characteristic].quantile(
+                [0.30, 0.70]
+            )
+
+            # Do not split tied values arbitrarily to force six cells.
+            if low_cut > high_cut:
+                raise ValueError(
+                    f"Degenerate {family} breakpoints in {date:%Y-%m}."
+                )
+
+            eligible["_size"] = np.where(
+                eligible["mvel1"] <= size_breakpoint,
+                "Small",
+                "Big",
+            )
+            eligible["_bucket"] = np.select(
+                [
+                    eligible[characteristic] <= low_cut,
+                    eligible[characteristic] <= high_cut,
+                ],
+                [0, 1],
+                default=2,
+            )
+
+            cells = {
+                (size, bucket): eligible.loc[
+                    eligible["_size"].eq(size)
+                    & eligible["_bucket"].eq(bucket)
+                ]
+                for size in ("Small", "Big")
+                for bucket in range(3)
+            }
+
+            for model_col in model_cols:
+                model = model_col.removeprefix("pred_")
+                component_results = {}
+
+                for (size, bucket), cell in cells.items():
+                    n_stocks = len(cell)
+
+                    if n_stocks:
+                        weights = cell["mvel1"].to_numpy(dtype=float)
+                        weights = weights / weights.sum()
+
+                        realized, realized_coverage = aggregate(
+                            cell["excess_ret_total"].to_numpy(
+                                dtype=float
+                            ),
+                            weights,
+                        )
+                        predicted, prediction_coverage = aggregate(
+                            cell[model_col].to_numpy(dtype=float),
+                            weights,
+                        )
+                    else:
+                        realized = predicted = np.nan
+                        realized_coverage = prediction_coverage = 0.0
+
+                    component_results[(size, bucket)] = (
+                        realized, predicted, n_stocks
+                    )
+
+                    rows.append({
+                        "date": date,
+                        "model": model,
+                        "panel": "B",
+                        "family": family,
+                        "portfolio": f"{size} {labels[bucket]}",
+                        "weighting": "value_weighted",
+                        "realized_return": realized,
+                        "predicted_return": predicted,
+                        "n_positions": n_stocks,
+                        "realized_weight_coverage": realized_coverage,
+                        "prediction_weight_coverage": prediction_coverage,
+                    })
+
+                # CMA is low investment minus high investment.
+                long_bucket, short_bucket = (
+                    (0, 2) if factor == "CMA" else (2, 0)
+                )
+
+                factor_keys = [
+                    ("Small", long_bucket),
+                    ("Big", long_bucket),
+                    ("Small", short_bucket),
+                    ("Big", short_bucket),
+                ]
+                coefficients = np.array([0.5, 0.5, -0.5, -0.5])
+
+                values = np.array([
+                    component_results[key][:2]
+                    for key in factor_keys
+                ])
+                factor_values = coefficients @ values
+
+                rows.append({
+                    "date": date,
+                    "model": model,
+                    "panel": "A",
+                    "family": family,
+                    "portfolio": factor,
+                    "weighting": "value_weighted",
+                    "realized_return": factor_values[0],
+                    "predicted_return": factor_values[1],
+                    "n_positions": sum(
+                        component_results[key][2]
+                        for key in factor_keys
+                    ),
+                    "realized_weight_coverage": np.nan,
+                    "prediction_weight_coverage": np.nan,
+                })
+
+                # Retain family-specific SMBs internally.
+                if family != "momentum":
+                    smb_keys = [
+                        (size, bucket)
+                        for size in ("Small", "Big")
+                        for bucket in range(3)
+                    ]
+                    smb_coefficients = np.array(
+                        [1 / 3] * 3 + [-1 / 3] * 3
+                    )
+                    smb_values = smb_coefficients @ np.array([
+                        component_results[key][:2]
+                        for key in smb_keys
+                    ])
+
+                    rows.append({
+                        "date": date,
+                        "model": model,
+                        "panel": "internal",
+                        "family": family,
+                        "portfolio": f"SMB_{family}",
+                        "weighting": "value_weighted",
+                        "realized_return": smb_values[0],
+                        "predicted_return": smb_values[1],
+                        "n_positions": sum(
+                            component_results[key][2]
+                            for key in smb_keys
+                        ),
+                        "realized_weight_coverage": np.nan,
+                        "prediction_weight_coverage": np.nan,
+                    })
+
+    if not rows:
+        raise ValueError("No portfolios could be constructed.")
+
+    result = pd.DataFrame(rows)
+    smb_rows = []
+
+    for (date, model), group in result.loc[
+        result["panel"].eq("internal")
+    ].groupby(["date", "model"], sort=False):
+        families = (
+            ["value"]
+            if smb_definition == "ff3"
+            else ["value", "profitability", "investment"]
+        )
+        selected = group.set_index("family").reindex(families)
+
+        # np.mean deliberately propagates missing component returns.
+        smb_rows.append({
+            "date": date,
+            "model": model,
+            "panel": "A",
+            "family": "size",
+            "portfolio": "SMB",
+            "weighting": "value_weighted",
+            "realized_return": np.mean(
+                selected["realized_return"].to_numpy(dtype=float)
+            ),
+            "predicted_return": np.mean(
+                selected["predicted_return"].to_numpy(dtype=float)
+            ),
+            "n_positions": selected["n_positions"].sum(min_count=1),
+            "realized_weight_coverage": np.nan,
+            "prediction_weight_coverage": np.nan,
+        })
+
+    result = pd.concat(
+        [
+            result.loc[~result["panel"].eq("internal")],
+            pd.DataFrame(smb_rows),
+        ],
+        ignore_index=True,
+    )
+
+    result["construction"] = "monthly_available_universe_2x3"
+    result["smb_definition"] = smb_definition
+
+    result = result.sort_values(
+        ["date", "model", "panel", "family", "portfolio"]
+    ).reset_index(drop=True)
+
+    portfolio_metrics = compute_fama_french_portfolio_metrics(
+        portfolio_returns=result,
+    )
+
+    output_dir = Path(output_dir)
+
+    save_csv(
+        portfolio_metrics,
+        output_dir / "fama_french_portfolio_metrics.csv",
+        enabled=save_outputs,
+    )
+
+    logger.info(
+        "Fama-French portfolio R2 evaluation completed: %s rows.",
+        len(portfolio_metrics),
+    )
+
+    return portfolio_metrics
 
 
 def create_evaulation_dataset(
@@ -798,10 +1234,13 @@ def evaluate_predictions(
         predictions=predictions,
         n_quantiles=n_quantiles,
     )
-    """
+
     out_path_portfolio_returns = f"{output_dir}/portfolio_returns.parquet"
-    save_parquet(portfolio_returns,out_path_portfolio_returns,enabled=save_outputs)    
-    """
+    save_parquet(portfolio_returns,out_path_portfolio_returns,enabled=save_outputs)
+    logger.info(
+        f"Evaluation part finished: "
+        f"portfolio_returns.parquet saved to: {output_dir}"
+    )   
 
     out_path_portfolio_metrics = (f"{output_dir}/portfolio_metrics.csv")
     save_csv(portfolio_metrics,out_path_portfolio_metrics,enabled=save_outputs,)
@@ -809,6 +1248,24 @@ def evaluate_predictions(
         f"Evaluation part finished: "
         f"portfolio_metrics.csv saved to: {output_dir}"
     )
+
+
+
+    
+    fama_french_portfolio_returns = build_fama_french_portfolios(
+        predictions=predictions,
+        smb_definition="ff5",
+        output_dir=output_dir,
+        save_outputs=save_outputs,
+    )
+
+    logger.info(
+        "Fama-French-style portfolio construction completed: "
+        "%s monthly portfolio/model observations.",
+        len(fama_french_portfolio_returns),
+    )    
+    
+
 
     feature_importance_results = None
 
@@ -835,3 +1292,15 @@ def evaluate_predictions(
         "feature_importance": feature_importance_results,
     }
 
+    """
+    return {
+        "r2_metrics_original": r2_metrics_original,
+        "r2_metrics": r2_metrics,
+        "dm_tests": dm_tests,
+        "portfolio_returns": portfolio_returns,
+        "portfolio_metrics": portfolio_metrics,
+        "fama_french_portfolio_returns": fama_french_portfolio_returns,
+        "feature_importance": feature_importance_results,
+    }
+
+    """

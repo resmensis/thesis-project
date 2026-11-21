@@ -253,7 +253,7 @@ def main():
     
 
     # ------------------------------------------------------------------
-    # 4. Run prediction window forecasting
+    # 4. Run prediction evakuation
     # ------------------------------------------------------------------
     if not Path(all_predictions_with_fama_path).exists():
         if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
@@ -263,7 +263,10 @@ def main():
             all_predictions_with_fama = create_evaulation_dataset(
                 predictions=predictions,
                 fama_french_charas_df=fama_french_charas_df,
+                output_dir=pred_path
             )
+        else: 
+            raise KeyError("missing data")
     else:
         all_predictions_with_fama = maybe_load_parquet(all_predictions_with_fama_path, enabled=True)
 
@@ -274,7 +277,7 @@ def main():
         predictions=all_predictions_with_fama,
         regime_config=regime_cfg,
         eval_config=eval_cfg,
-        output_dir="output",
+        output_dir=pred_path,
         n_quantiles=10,
         save_outputs=True,
         feature_importance_dir=f"{pred_path}/feature_importance" ,

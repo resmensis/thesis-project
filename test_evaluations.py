@@ -28,7 +28,7 @@ repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig(force_rebuild_feature_set=True, force_rebuild_dataset=True)
 data_cfg = DataFilesConfig()
 run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=False) 
-regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
+regime_cfg = DataRegimeConfig(mode="coding", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
 grid_cfg = HyperGridConfig()
 freq_cfg = CharacteristicsFrequency()
 log_cfg = LoggingConfig()
@@ -39,10 +39,35 @@ model_cfg = ModelSelectionConfig(run_all_models = True,
 eval_cfg = EvaluationConfig()
 
 
+
+
+
+
+repro_cfg = ReproducibilityConfig(random_state=42)
+cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
+data_cfg = DataFilesConfig()
+run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=True) 
+regime_cfg = DataRegimeConfig(mode="coding", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
+grid_cfg = HyperGridConfig()
+freq_cfg = CharacteristicsFrequency()
+log_cfg = LoggingConfig()
+window_cfg = WindowConfig(window_type="expanding")
+model_cfg = ModelSelectionConfig(run_all_models = True,
+                                    models_to_run= []
+                                )
+eval_cfg = EvaluationConfig()
+
+
+
+
+
+
+
 # ------------------------------------------------------------------
 # 0. Paths
 # ------------------------------------------------------------------
 complete_dataset_path=f"{cache_cfg.cache_dir}/complete_dataset.parquet"
+fama_french_charas_path=f"{cache_cfg.cache_dir}/fama_french_charas.parquet"
 descriptives_path=cache_cfg.descriptives_dir
 
 industry_suffix = "wDummies" if regime_cfg.include_industry_dummies else "noDummies"
@@ -71,7 +96,7 @@ grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
 model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
 pred_window_path = (
-    f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window" 
+    f"{regime_cfg.mode}" #_mode-{window_cfg.window_type}_window
     if regime_cfg.mode=="coding" 
     else f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window/{feature_suffix}_{model_suffix}_{grid_suffix}"
 )
@@ -95,7 +120,10 @@ if not Path(all_predictions_with_fama_path).exists():
         all_predictions_with_fama = create_evaulation_dataset(
             predictions=predictions,
             fama_french_charas_df=fama_french_charas_df,
+            output_dir=pred_path
         )
+    else: 
+        raise KeyError("missing data")
 else:
     all_predictions_with_fama = maybe_load_parquet(all_predictions_with_fama_path, enabled=True)
 
@@ -106,7 +134,7 @@ evaluation = evaluate_predictions(
     predictions=all_predictions_with_fama,
     regime_config=regime_cfg,
     eval_config=eval_cfg,
-    output_dir="output",
+    output_dir=pred_path,
     n_quantiles=10,
     save_outputs=True,
     feature_importance_dir=f"{pred_path}/feature_importance" ,
