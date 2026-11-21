@@ -35,7 +35,7 @@ def main():
     grid_cfg = HyperGridConfig()
     freq_cfg = CharacteristicsFrequency()
     log_cfg = LoggingConfig()
-    window_cfg = WindowConfig(window_type="expanding")
+    window_cfg = WindowConfig(window_type="rolling")
     model_cfg = ModelSelectionConfig(run_all_models = True,
                                      models_to_run= []
                                     )
