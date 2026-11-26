@@ -1644,3 +1644,124 @@ def portfolio_r2(
     )
 
     return output_path
+
+
+def _boundaries(w, test_year: int, kind: str):
+    """Cumulative-year boundaries (inclusive end years) for one refit."""
+    train_len = w.initial_train_end_year - w.train_start_year + 1
+    val_len = w.val_end_year - w.val_start_year + 1
+    val_end = test_year - 1
+    train_end = val_end - val_len
+    start = (w.train_start_year - 1) if kind == "expanding" else (train_end - train_len)
+    return start, train_end, val_end, test_year
+
+
+def _cum_by_year(obs: pd.DataFrame, years) -> dict[int, float]:
+    yearly = obs.groupby(obs["month"].dt.year)["n_obs"].sum().sort_index()
+    cum = yearly.cumsum()
+    first = int(yearly.index.min())
+
+    def f(y):
+        if y < first:
+            return 0.0
+        return float(cum.loc[:y].iloc[-1])
+
+    return {y: f(y) for y in years}
+
+
+def _panel_coords(w, cum_fn, test_years, kind, scale=1.0):
+    rows = []
+    for t in test_years:
+        rows.append([cum_fn(y) * scale for y in _boundaries(w, t, kind)])
+    return np.array(rows)  # shape (n_years, 4): start, train_end, val_end, test_end
+
+
+def _coords_str(xs, ys):
+    return " ".join(f"({x},{y:.6g})" for x, y in zip(xs, ys))
+
+def write_split_tex(
+    obs_csv_path: str,
+    window_cfg,
+    out_path: str,
+    test_end_year: int | None = None,
+):
+    obs = pd.read_csv(obs_csv_path, parse_dates=["month"])
+    test_end_year = test_end_year or window_cfg.test_end_year_extended
+    test_years = list(range(window_cfg.test_start_year, test_end_year + 1))
+
+    cum_act = _cum_by_year(obs, range(window_cfg.train_start_year - 1, test_end_year + 1))
+    act_fn = lambda y: cum_act[max(y, window_cfg.train_start_year - 1)]
+    n_years = test_end_year - window_cfg.train_start_year + 1
+    th_fn = lambda y: max(0, y - window_cfg.train_start_year + 1) / n_years
+
+    MILL = 1e-6
+    panels = [("expanding", th_fn, 1.0), ("rolling", th_fn, 1.0),
+              ("expanding", act_fn, MILL), ("rolling", act_fn, MILL)]
+    coords = [_panel_coords(window_cfg, fn, test_years, kind, scale=s) for kind, fn, s in panels]
+    y_top_act = float(np.ceil(max(c.max() for c in coords[2:]) * 2) / 2)  # shared, rounded to 0.5
+
+    x0, x1 = test_years[0], test_years[-1]
+    xticks = ",".join(str(y) for y in range(int(np.ceil(x0 / 5) * 5), x1 + 1, 5))
+
+    L = [
+        r"% Requires: \usepackage{pgfplots}, \pgfplotsset{compat=1.18},",
+        r"% \usepgfplotslibrary{groupplots,fillbetween}",
+        r"\begin{tikzpicture}",
+        r"\definecolor{splitTrain}{HTML}{0072B2}",
+        r"\definecolor{splitVal}{HTML}{E69F00}",
+        r"\definecolor{splitTest}{HTML}{D55E00}",
+        r"\begin{groupplot}[",
+        r"  group style={group size=2 by 2, horizontal sep=0.5cm, vertical sep=1.5cm,",
+        r"    xticklabels at=edge bottom, xlabels at=edge bottom,",
+        r"    yticklabels at=edge left, ylabels at=edge left},",
+        rf"  width=0.50\textwidth, height=5cm, xmin={x0}, xmax={x1}, ymin=0,",
+        rf"  xtick={{{xticks}}}, xticklabel style={{/pgf/number format/1000 sep={{}}}},",
+        r"  xlabel={Testing year}, tick align=outside, axis on top,",
+        r"  ymajorgrids, grid style={gray!25, very thin}, tick style={gray},",
+        r"  every axis title/.style={font=\small\bfseries}, label style={font=\small},",
+        r"  tick label style={font=\footnotesize},",
+        r"]",
+    ]
+
+    cols = ["splitTrain", "splitVal", "splitTest"]
+    names = ["Training", "Validation", "Testing"]
+    titles = ["Expanding window", "Rolling window", "", ""]
+
+    for i, ((kind, _, _), c) in enumerate(zip(panels, coords)):
+        theory = i < 2
+        opts = []
+        if titles[i]:
+            opts.append(f"title={{{titles[i]}}}")
+        if i % 2 == 0:
+            opts.append("ylabel={Share of timeline}" if theory else "ylabel={Observations (millions)}")
+        opts.append("ymax=1, ytick={0,0.25,0.5,0.75,1}" if theory else f"ymax={y_top_act:g}")
+        if i == 0:
+            opts += [
+                "legend columns=3", "legend to name=splitleg",
+                "legend style={draw=none, font=\\small, /tikz/every even column/.append style={column sep=0.4cm}}",
+            ]
+        L.append(r"\nextgroupplot[" + ", ".join(opts) + "]")
+
+        for j in range(4):
+            L.append(rf"\addplot[name path=b{i}{j}, gray!70!black, very thin, forget plot] "
+                     rf"coordinates {{{_coords_str(test_years, c[:, j])}}};")
+        for j in range(3):
+            L.append(rf"\addplot[{cols[j]}, fill opacity=0.65, forget plot] "
+                     rf"fill between[of=b{i}{j} and b{i}{j+1}];")
+        if i == 0:
+            for j in range(3):
+                L.append(rf"\addlegendimage{{area legend, fill={cols[j]}, fill opacity=0.65, draw=gray}}")
+                L.append(rf"\addlegendentry{{{names[j]}}}")
+
+    L += [
+        r"\end{groupplot}",
+        r"\path (group c1r2.south west) -- (group c2r2.south east) coordinate[midway] (splitmid);",
+        r"\node[anchor=north, yshift=-1.1cm] at (splitmid) {\ref{splitleg}};",
+        r"\end{tikzpicture}",
+    ]
+
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(L), encoding="utf-8")
+    return out
+
