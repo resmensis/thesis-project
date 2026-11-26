@@ -1317,6 +1317,7 @@ def build_sp500_portfolio(
         "S&P 500 proxy built: %s months, %s models.",
         realized.shape[0], len(model_cols),
     )
+    
 
     return portfolio_returns, portfolio_metrics
 
