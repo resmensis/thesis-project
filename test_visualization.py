@@ -21,7 +21,7 @@ from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from prediction_window import run_pred_window
 from evaluation import evaluate_predictions
-from visualization import  r2_metrics, dm_tests, r2_comparison, portfolio_metrics
+from visualization import  r2_metrics, dm_tests, r2_comparison, portfolio_metrics, cumulative_returns
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
@@ -97,6 +97,9 @@ for i in ["expanding","rolling"]:
     path_r2_metrics_original = f"{pred_path}/r2_metrics_original.csv"
     path_dm_tests = f"{pred_path}/dm_tests.csv"
     path_portfolio_metrics = f"{pred_path}/portfolio_metrics.csv"
+    path_portfolio_returns= f"{pred_path}/portfolio_returns.parquet"
+    path_portfolio_presp_metrics = f"{pred_path}/fama_french_portfolio_metrics.csv"
+    path_portfolio_presp_returns= f"{pred_path}/portfolio_returns.parquet"
 
 
 
@@ -108,7 +111,7 @@ for i in ["expanding","rolling"]:
         r2_metrics=pd.read_csv(path_r2_metrics),
         eval_config=eval_cfg,
         output_path=visualization_path,
-        file_name="r2_extended",
+        file_name=f"r2_extended_{i}",
         sample_years="1987 -- 2021",
         label="tab:stock_prediction_performance_extended"
     )
@@ -117,7 +120,7 @@ for i in ["expanding","rolling"]:
         r2_metrics=pd.read_csv(path_r2_metrics_original),
         eval_config=eval_cfg,
         output_path=visualization_path,
-        file_name="r2_original",
+        file_name=f"r2_original_{i}",
         sample_years="1987 -- 2016",
         label="tab:stock_prediction_performance_original"
     )
@@ -126,7 +129,7 @@ for i in ["expanding","rolling"]:
         dm_tests=pd.read_csv(path_dm_tests),
         eval_config=eval_cfg,
         output_path=visualization_path,
-        file_name="dm_tests",
+        file_name=f"dm_tests_{i}",
         sample_years="1987 -- 2021",
     )
 
@@ -135,7 +138,7 @@ for i in ["expanding","rolling"]:
         r2_metrics=pd.read_csv(path_r2_metrics),
         eval_config=eval_cfg,
         output_path=visualization_path,
-        file_name="r2_comparison",
+        file_name=f"r2_comparison_{i}",
         original_years="1987 -- 2016",
         extended_years="1987 -- 2021",
     )
@@ -144,6 +147,20 @@ for i in ["expanding","rolling"]:
         portfolio_metrics=pd.read_csv(path_portfolio_metrics),
         eval_config=eval_cfg,
         output_path=visualization_path,
-        file_name="portfolio_performance",
+        file_name=f"portfolio_performance_{i}",
         sample_years="1987 -- 2021",
     )
+
+    """
+    cumulative_table = cumulative_returns(
+        portfolio_returns=pd.read_parquet(path_portfolio_returns), 
+        eval_config=eval_cfg,
+        output_path=visualization_path, 
+        file_name=f"cumulative_returns_{i}",
+        sample_years="1987--2021", 
+        market_excess_returns=mkt)
+    """
+    
+
+
+

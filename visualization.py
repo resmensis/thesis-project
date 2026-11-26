@@ -998,3 +998,329 @@ def portfolio_metrics(
         )
 
     return outputs
+
+
+NBER_RECESSIONS = [
+    ("1990-07", "1991-03"),
+    ("2001-03", "2001-11"),
+    ("2007-12", "2009-06"),
+    ("2020-02", "2020-04"),
+]
+
+
+def cumulative_returns(
+    portfolio_returns: pd.DataFrame,
+    eval_config,
+    output_path: str | Path,
+    file_name: str,
+    sample_years: str,
+    market_excess_returns: pd.Series | None = None,
+    models: list[str] | None = None,
+    label: str = "fig:cumulative_returns",
+    invert_short: bool = False,
+) -> Path:
+    """
+    Export a Gu et al. Figure 9-style LaTeX (pgfplots) figure.
+
+    Plots cumulative log returns of value-weighted decile portfolios sorted
+    on out-of-sample forecasts. Solid = long (portfolio "10"), dashed =
+    short (portfolio "1"), black = cumulative market excess return.
+
+    Required columns:
+        date, model, weighting, portfolio, realized_return
+
+    realized_return must be a decimal monthly excess return (not percent).
+    portfolio must be a string ("1".."10" or "high_minus_low").
+    market_excess_returns: decimal monthly excess returns indexed by month.
+    invert_short: if True, plot the negative of the bottom-decile
+        cumulative log return (economic short position).
+
+    Uses eval_config.preferred_order, default_labels, default_sublabels
+    and exclude_from_plot. Configured labels are treated as LaTeX.
+    """
+    required = {"date", "model", "weighting", "portfolio", "realized_return"}
+    missing = required.difference(portfolio_returns.columns)
+    if missing:
+        raise KeyError(f"Missing portfolio_returns columns: {sorted(missing)}")
+    if portfolio_returns.empty:
+        raise ValueError("portfolio_returns is empty.")
+    if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
+        raise ValueError("Use a simple LaTeX label without special characters.")
+
+    output_path = Path(f"{output_path}/{file_name}.tex")
+    if output_path.suffix.lower() != ".tex":
+        raise ValueError("output_path must have a .tex extension.")
+
+    def escape_latex(text):
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        return "".join(replacements.get(c, c) for c in str(text))
+
+    def to_month_start(values):
+        return pd.to_datetime(values).to_period("M").to_timestamp()
+
+    def clean_returns(values, name):
+        out = pd.to_numeric(values, errors="raise").replace(
+            [np.inf, -np.inf], np.nan
+        )
+        if (out <= -1.0).any():
+            raise ValueError(f"{name}: returns <= -100% make log returns undefined.")
+        return out
+
+    def x_start(ts):
+        return ts.year + (ts.month - 1) / 12.0
+
+    def x_end(ts):
+        return ts.year + ts.month / 12.0
+
+    data = portfolio_returns.loc[
+        portfolio_returns["weighting"].astype(str).eq("value_weighted")
+        & portfolio_returns["portfolio"].astype(str).isin(["1", "10"]),
+        ["date", "model", "portfolio", "realized_return"],
+    ].copy()
+    if data.empty:
+        raise ValueError("No value-weighted rows for portfolios '1' and '10'.")
+
+    data["date"] = to_month_start(data["date"])
+    data["model"] = data["model"].astype(str)
+    data["portfolio"] = data["portfolio"].astype(str)
+    if data[["date", "model", "portfolio"]].isna().any().any():
+        raise ValueError("date, model, and portfolio must not be missing.")
+    if data.duplicated(["model", "date", "portfolio"]).any():
+        raise ValueError("Expected one row per model, date, and portfolio.")
+    data["realized_return"] = clean_returns(data["realized_return"], "portfolio_returns")
+
+    available = data["model"].drop_duplicates().tolist()
+    default_models = [
+        "OLS_3", "PLS", "PCR_Linear", "ENet", "GLM",
+        "RandomForest", "GBRT", "NN4",
+    ]
+    if models is None:
+        requested = [m for m in default_models if m in available]
+    else:
+        unknown = [m for m in models if m not in available]
+        if unknown:
+            raise ValueError(f"Requested models not in data: {unknown}")
+        requested = list(dict.fromkeys(models))
+
+    ordered = list(dict.fromkeys(
+        [m for m in eval_config.preferred_order if m in requested]
+        + requested
+    ))
+    plot_models = [m for m in ordered if m not in eval_config.exclude_from_plot]
+    if not plot_models:
+        raise ValueError("No models remain after exclude_from_plot.")
+
+    long_wide = data[data["portfolio"].eq("10")].pivot(
+        index="date", columns="model", values="realized_return"
+    )
+    short_wide = data[data["portfolio"].eq("1")].pivot(
+        index="date", columns="model", values="realized_return"
+    )
+    for name in plot_models:
+        if name not in long_wide.columns or name not in short_wide.columns:
+            raise ValueError(f"Model {name} needs both portfolios '1' and '10'.")
+
+    all_dates = long_wide.index.union(short_wide.index).sort_values()
+    long_wide = long_wide.reindex(all_dates)[plot_models]
+    short_wide = short_wide.reindex(all_dates)[plot_models]
+
+    valid = long_wide.notna().all(axis=1) & short_wide.notna().all(axis=1)
+    for name in plot_models:
+        dropped = int(
+            (long_wide[name].isna() | short_wide[name].isna()).sum()
+        )
+        logger.info(f"cumulative_returns: {name}: {dropped} months with missing returns.")
+
+    market = None
+    if market_excess_returns is not None:
+        market = pd.Series(market_excess_returns).copy()
+        market.index = to_month_start(market.index)
+        if market.index.duplicated().any():
+            raise ValueError("market_excess_returns has duplicate months.")
+        market = clean_returns(market, "market_excess_returns").reindex(all_dates)
+        logger.info(
+            f"cumulative_returns: market: {int(market.isna().sum())} "
+            "months missing after alignment."
+        )
+        valid &= market.notna()
+
+    common = all_dates[valid.to_numpy()]
+    if len(common) < 2:
+        raise ValueError("Fewer than two common months across models and market.")
+    if len(common) != len(all_dates):
+        logger.info(
+            f"cumulative_returns: using {len(common)} of {len(all_dates)} months "
+            "(common finite months only)."
+        )
+
+    def cumulate(series):
+        return np.log1p(series.loc[common].to_numpy(dtype=float)).cumsum()
+
+    long_cum = {m: cumulate(long_wide[m]) for m in plot_models}
+    short_cum = {m: cumulate(short_wide[m]) for m in plot_models}
+    if invert_short:
+        short_cum = {m: -v for m, v in short_cum.items()}
+    market_cum = cumulate(market) if market is not None else None
+
+    x_origin = x_start(common[0])
+    xs = [x_end(d) for d in common]
+    x_min, x_max = x_origin, xs[-1]
+
+    all_values = np.concatenate(
+        [np.zeros(1)]
+        + list(long_cum.values())
+        + list(short_cum.values())
+        + ([market_cum] if market_cum is not None else [])
+    )
+    y_lo, y_hi = float(all_values.min()), float(all_values.max())
+    margin = max(0.05 * (y_hi - y_lo), 0.1)
+    y_min, y_max = y_lo - margin, y_hi + margin
+
+    palette = [
+        "0072B2", "D55E00", "009E73", "CC79A7",
+        "E69F00", "56B4E9", "882255", "117733",
+    ]
+    colors = {m: f"crmodel{i}" for i, m in enumerate(plot_models)}
+
+    def model_label(model):
+        heading = eval_config.default_labels.get(model, escape_latex(model))
+        suffix = eval_config.default_sublabels.get(model, "")
+        separator = r"\ " if suffix and not suffix.startswith("+") else ""
+        return heading + separator + suffix
+
+    def coords(values):
+        points = [f"({x_origin:.6f},0.000000)"] + [
+            f"({x:.6f},{v:.6f})" for x, v in zip(xs, values)
+        ]
+        return " ".join(points)
+
+    first_tick = int(np.ceil(x_min))
+    last_tick = int(np.floor(x_max))
+    ticks = ",".join(str(t) for t in range(first_tick, last_tick + 1, 3))
+
+    recessions = []
+    for start, end in NBER_RECESSIONS:
+        x0 = max(x_start(pd.Timestamp(start)), x_min)
+        x1 = min(x_end(pd.Timestamp(end)), x_max)
+        if x0 < x1:
+            recessions.append((x0, x1))
+
+    lines = [
+        r"\begin{figure}[htbp]",
+        r"\centering",
+        (
+            r"\caption{Cumulative return of machine learning portfolios: "
+            + escape_latex(sample_years) + "}"
+        ),
+        rf"\label{{{label}}}",
+    ]
+    for i, color in enumerate(palette[:len(plot_models)]):
+        lines.append(rf"\definecolor{{crmodel{i}}}{{HTML}}{{{color}}}")
+    if len(plot_models) > len(palette):
+        raise ValueError(f"At most {len(palette)} models are supported.")
+
+    lines.extend([
+        r"\begin{tikzpicture}",
+        r"\begin{axis}[",
+        r"width=\linewidth,",
+        r"height=7cm,",
+        rf"xmin={x_min:.6f}, xmax={x_max:.6f},",
+        rf"ymin={y_min:.6f}, ymax={y_max:.6f},",
+        rf"xtick={{{ticks}}},",
+        r"xticklabel={\pgfmathprintnumber[fixed,precision=0,"
+        r"set thousands separator={}]{\tick}},",
+        r"xticklabel style={font=\scriptsize},",
+        r"yticklabel style={font=\scriptsize},",
+        r"ylabel={Cumulative log return},",
+        r"ylabel style={font=\scriptsize},",
+        r"axis x line*=bottom,",
+        r"axis y line*=left,",
+        r"ymajorgrids=true,",
+        r"grid style={gray!25},",
+        r"legend style={",
+        r"at={(0.01,0.99)},anchor=north west,",
+        r"draw=none,fill=white,font=\scriptsize",
+        r"},",
+        r"legend cell align=left,",
+        r"]",
+    ])
+
+    for x0, x1 in recessions:
+        lines.append(
+            rf"\fill[gray,opacity=0.15] (axis cs:{x0:.6f},{y_min:.6f}) "
+            rf"rectangle (axis cs:{x1:.6f},{y_max:.6f});"
+        )
+
+    for name in plot_models:
+        lines.extend([
+            rf"\addplot[{colors[name]},solid,no marks,thick] "
+            rf"coordinates {{{coords(long_cum[name])}}};",
+            rf"\addlegendentry{{{model_label(name)}}}",
+        ])
+    for name in plot_models:
+        lines.append(
+            rf"\addplot[{colors[name]},dashed,no marks,thick,forget plot] "
+            rf"coordinates {{{coords(short_cum[name])}}};"
+        )
+
+    if market_cum is not None:
+        lines.extend([
+            rf"\addplot[black,solid,no marks,thick] "
+            rf"coordinates {{{coords(market_cum)}}};",
+            r"\addlegendentry{Market}",
+        ])
+
+    lines.extend([
+        r"\addlegendimage{black,solid,thick}",
+        r"\addlegendentry{Long}",
+        r"\addlegendimage{black,dashed,thick}",
+        r"\addlegendentry{Short}",
+        r"\end{axis}",
+        r"\end{tikzpicture}",
+    ])
+
+    short_text = (
+        "the negative of the bottom-decile cumulative log return"
+        if invert_short
+        else "the cumulative log return of the bottom decile itself"
+    )
+    notes = (
+        r"\par\medskip\begingroup\footnotesize\emph{Notes:} "
+        r"The figure shows cumulative log returns of value-weighted decile "
+        r"portfolios sorted on out-of-sample return forecasts. Solid lines "
+        r"denote the long position (top decile); dashed lines denote the "
+        f"short position ({short_text}). "
+        r"Shaded areas indicate NBER recessions. "
+    )
+    if market_cum is not None:
+        notes += r"The market line is the cumulative excess market return. "
+    else:
+        notes += r"No market benchmark was supplied. "
+    notes += (
+        f"The out-of-sample period is {escape_latex(sample_years)}; "
+        f"the plotted sample spans {common[0]:%Y-%m} to {common[-1]:%Y-%m} "
+        f"({len(common)} common months)."
+        r"\endgroup"
+    )
+    lines.extend([notes, r"\end{figure}"])
+
+    ensure_dir(output_path.parent)
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    logger.info(
+        f"Visualisation part finished: "
+        f"{file_name}.tex saved to: {output_path}"
+    )
+
+    return output_path
+

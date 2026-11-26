@@ -20,7 +20,7 @@ from io_utils import ensure_dir, save_parquet, set_global_seed, setup_project_lo
 from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from prediction_window import run_pred_window
-from evaluation import evaluate_predictions, create_evaulation_dataset
+from evaluation import evaluate_predictions, create_evaulation_dataset, build_sp500_portfolio
 from visualization import  r2_metrics
 
 
@@ -28,7 +28,7 @@ repro_cfg = ReproducibilityConfig(random_state=42)
 cache_cfg = CacheConfig(force_rebuild_feature_set=False, force_rebuild_dataset=False)
 data_cfg = DataFilesConfig()
 run_ctrl_cfg = RunControlConfig(feature_panel_only=False, load_predictions=True) 
-regime_cfg = DataRegimeConfig(mode="coding", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
+regime_cfg = DataRegimeConfig(mode="full", include_industry_dummies=False, include_macro_interactions=False, use_all_macros=True, ols3_only_mode=False)
 grid_cfg = HyperGridConfig()
 freq_cfg = CharacteristicsFrequency()
 log_cfg = LoggingConfig()
@@ -76,53 +76,62 @@ else:
 grid_suffix = "baseGrid" if not grid_cfg.use_extended_grids else f"extGrid"
 model_suffix = "allModels" if model_cfg.run_all_models else "selModels"
 
-pred_window_path = (
-    f"{regime_cfg.mode}" #_mode-{window_cfg.window_type}_window
-    if regime_cfg.mode=="coding" 
-    else f"{regime_cfg.mode}_mode-{window_cfg.window_type}_window/{feature_suffix}_{model_suffix}_{grid_suffix}"
-)
-pred_path = f"output/{pred_window_path}"
-all_predictions_path = f"{pred_path}/all_predictions.parquet"
-all_predictions_with_fama_path = f"{pred_path}/all_predictions_fama_french.parquet"
-yearly_predictions_path = f"{pred_path}/predictions"
+for i in ["expanding","rolling"]:
+    pred_window_path = (
+        f"{regime_cfg.mode}" #_mode-{window_cfg.window_type}_window
+        if regime_cfg.mode=="coding" 
+        else f"{regime_cfg.mode}_mode-{i}_window/{feature_suffix}_{model_suffix}_{grid_suffix}" #window_cfg.window_type
+    )
+    pred_path = f"output/{pred_window_path}"
+    all_predictions_path = f"{pred_path}/all_predictions.parquet"
+    all_predictions_with_fama_path = f"{pred_path}/all_predictions_fama_french.parquet"
+    yearly_predictions_path = f"{pred_path}/predictions"
 
-evaluation_path = f"{pred_path}/evaluation"
+    evaluation_path = f"{pred_path}/evaluation"
 
-visualization_path = f"{pred_path}/visualization"
-# ------------------------------------------------------------------
-# 
-# ------------------------------------------------------------------
+    visualization_path = f"{pred_path}/visualization"
+    # ------------------------------------------------------------------
+    # 
+    # ------------------------------------------------------------------
 
-if not Path(all_predictions_with_fama_path).exists():
-    if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
-        predictions = maybe_load_parquet(all_predictions_path, enabled=True)
-        fama_french_charas_df = maybe_load_parquet(fama_french_charas_path, enabled=True)
+    if not Path(all_predictions_with_fama_path).exists():
+        if run_ctrl_cfg.load_predictions and Path(all_predictions_path).exists() and has_expected_prediction_files(yearly_predictions_path):
+            predictions = maybe_load_parquet(all_predictions_path, enabled=True)
+            fama_french_charas_df = maybe_load_parquet(fama_french_charas_path, enabled=True)
 
-        all_predictions_with_fama = create_evaulation_dataset(
-            predictions=predictions,
-            fama_french_charas_df=fama_french_charas_df,
-            output_dir=pred_path
-        )
-    else: 
-        raise KeyError("missing data")
-else:
-    all_predictions_with_fama = maybe_load_parquet(all_predictions_with_fama_path, enabled=True)
-
-
-    
-
-evaluation = evaluate_predictions(
-    predictions=all_predictions_with_fama,
-    regime_config=regime_cfg,
-    eval_config=eval_cfg,
-    output_dir=pred_path,
-    n_quantiles=10,
-    save_outputs=True,
-    feature_importance_dir=f"{pred_path}/feature_importance" ,
-)
+            all_predictions_with_fama = create_evaulation_dataset(
+                predictions=predictions,
+                fama_french_charas_df=fama_french_charas_df,
+                output_dir=pred_path
+            )
+        else: 
+            raise KeyError("missing data")
+    else:
+        all_predictions_with_fama = maybe_load_parquet(all_predictions_with_fama_path, enabled=True)
 
 
+    """
+    evaluation = evaluate_predictions(
+        predictions=all_predictions_with_fama,
+        regime_config=regime_cfg,
+        eval_config=eval_cfg,
+        output_dir=pred_path,
+        n_quantiles=10,
+        save_outputs=True,
+        feature_importance_dir=f"{pred_path}/feature_importance" ,
+    )    
+    """
 
+
+
+
+    sp500_portfolio_returns, sp500_portfolio_metrics = build_sp500_portfolio(
+        predictions=all_predictions_with_fama,
+        n_constituents=500,
+        membership_update="quarterly",
+        output_dir=pred_path,
+        save_outputs=True,
+    )
 
 
 

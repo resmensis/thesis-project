@@ -1100,6 +1100,227 @@ def build_fama_french_portfolios(
     return portfolio_metrics
 
 
+def build_sp500_portfolio(
+    predictions: pd.DataFrame,
+    *,
+    n_constituents: int = 500,
+    membership_update: str = "monthly",
+    mvel1_is_log: bool = False,
+    output_dir: str | Path = "output",
+    save_outputs: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Rebuild an S&P 500 proxy from the largest stocks by mvel1.
+
+    Timing
+    ------
+    mvel1 on row date t must be market equity known before month t, so
+    excess_ret_total and pred_* in row t are the month-t outcomes and
+    forecasts. Membership and weights use only mvel1 at the start of
+    month t.
+
+    membership_update
+    -----------------
+    "monthly":   top n_constituents are re-selected every month.
+    "quarterly": selected in March/June/September/December rows (and the
+                 first sample month), then held until the next selection.
+                 Stocks missing from a later month drop out and weights
+                 are renormalized among the remaining members.
+
+    Weights are mvel1 / sum(mvel1) across members. Missing realized or
+    predicted returns keep the stock as a member; the affected portfolio
+    return is NaN and the coverage columns record the missing weight.
+
+    Months with fewer than n_constituents eligible stocks are skipped.
+
+    Returns
+    -------
+    (portfolio_returns, portfolio_metrics)
+        portfolio_metrics uses compute_fama_french_portfolio_metrics().
+    """
+    if membership_update not in {"monthly", "quarterly"}:
+        raise ValueError("membership_update must be 'monthly' or 'quarterly'.")
+    if (
+        isinstance(n_constituents, (bool, np.bool_))
+        or not isinstance(n_constituents, (int, np.integer))
+        or n_constituents < 1
+    ):
+        raise ValueError("n_constituents must be a positive integer.")
+
+    if not predictions.columns.is_unique:
+        raise ValueError("Input column names must be unique.")
+
+    required = ["permno", "date", "excess_ret_total", "mvel1"]
+    missing = sorted(set(required).difference(predictions.columns))
+    if missing:
+        raise KeyError(f"Missing required columns: {missing}")
+
+    model_cols = [
+        col for col in predictions.columns
+        if isinstance(col, str) and col.startswith("pred_")
+    ]
+    if not model_cols:
+        raise ValueError("No pred_* columns found.")
+
+    data = predictions[required + model_cols].copy()
+
+    data["date"] = (
+        pd.to_datetime(data["date"], errors="raise")
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+    if data[["permno", "date"]].isna().any().any():
+        raise ValueError("permno and date must not be missing.")
+    if data.duplicated(["permno", "date"]).any():
+        raise ValueError("Input must have one observation per permno and month.")
+
+    numeric_cols = ["excess_ret_total", "mvel1", *model_cols]
+    data[numeric_cols] = (
+        data[numeric_cols]
+        .apply(pd.to_numeric, errors="raise")
+        .replace([np.inf, -np.inf], np.nan)
+    )
+
+    if mvel1_is_log:
+        data["mvel1"] = np.exp(data["mvel1"])
+
+    if data["mvel1"].max() <= 1.0:
+        raise ValueError(
+            "mvel1 looks scaled to [-1, 1]. Use the unscaled market equity "
+            "saved before the quantile transformation."
+        )
+
+    data = data.loc[data["mvel1"].gt(0)].copy()
+
+    counts = data.groupby("date").size()
+    short_dates = counts.index[counts < n_constituents]
+    if len(short_dates):
+        logger.warning(
+            "Skipping %s months with fewer than %s eligible stocks.",
+            len(short_dates), n_constituents,
+        )
+        data = data.loc[~data["date"].isin(short_dates)].copy()
+    if data.empty:
+        raise ValueError("No months with enough eligible stocks.")
+
+    # Deterministic ranking: largest mvel1 first, permno breaks ties.
+    data = data.sort_values(
+        ["date", "mvel1", "permno"],
+        ascending=[True, False, True],
+    )
+    data["_rank"] = data.groupby("date").cumcount() + 1
+
+    if membership_update == "monthly":
+        members = data.loc[data["_rank"] <= n_constituents].copy()
+    else:
+        dates = pd.DatetimeIndex(
+            data["date"].drop_duplicates().sort_values()
+        )
+        rebalance_dates = dates[dates.month.isin([3, 6, 9, 12])].union(
+            dates[:1]
+        )
+
+        date_map = pd.merge_asof(
+            pd.DataFrame({"date": dates}),
+            pd.DataFrame({"_rebalance_date": rebalance_dates}),
+            left_on="date",
+            right_on="_rebalance_date",
+        )
+        constituents = (
+            data.loc[
+                data["date"].isin(rebalance_dates)
+                & (data["_rank"] <= n_constituents),
+                ["permno", "date"],
+            ]
+            .rename(columns={"date": "_rebalance_date"})
+        )
+        members = (
+            data.merge(date_map, on="date", how="inner")
+            .merge(constituents, on=["permno", "_rebalance_date"], how="inner")
+        )
+
+    members["_w"] = (
+        members["mvel1"] / members.groupby("date")["mvel1"].transform("sum")
+    )
+    by_date = members["date"]
+
+    def weighted_aggregate(column: str):
+        values = members[column]
+        finite = values.notna()
+        total = (
+            (members["_w"] * values).where(finite, 0.0)
+            .groupby(by_date).sum()
+        )
+        n_missing = (~finite).groupby(by_date).sum()
+        coverage = members["_w"].where(finite, 0.0).groupby(by_date).sum()
+        return total.where(n_missing.eq(0)), coverage
+
+    n_positions = members.groupby("date").size()
+    market_cap_share = (
+        members.groupby("date")["mvel1"].sum()
+        / data.groupby("date")["mvel1"].sum()
+    ).reindex(n_positions.index)
+
+    realized, realized_coverage = weighted_aggregate("excess_ret_total")
+
+    frames = []
+    for model_col in model_cols:
+        predicted, prediction_coverage = weighted_aggregate(model_col)
+
+        frames.append(pd.DataFrame({
+            "date": realized.index,
+            "model": model_col.removeprefix("pred_"),
+            "panel": "A",
+            "family": "market",
+            "portfolio": "S&P 500",
+            "weighting": "value_weighted",
+            "realized_return": realized.to_numpy(),
+            "predicted_return": predicted.to_numpy(),
+            "n_positions": n_positions.to_numpy(),
+            "realized_weight_coverage": realized_coverage.to_numpy(),
+            "prediction_weight_coverage": prediction_coverage.to_numpy(),
+            "market_cap_share": market_cap_share.to_numpy(),
+            "construction": (
+                f"top_{n_constituents}_mvel1_{membership_update}"
+            ),
+        }))
+
+    portfolio_returns = (
+        pd.concat(frames, ignore_index=True)
+        .sort_values(["date", "model"])
+        .reset_index(drop=True)
+    )
+
+    portfolio_metrics = compute_fama_french_portfolio_metrics(
+        portfolio_returns=portfolio_returns,
+    )
+
+    output_dir = Path(output_dir)
+
+    save_parquet(
+        portfolio_returns,
+        output_dir / "sp500_portfolio_returns.parquet",
+        enabled=save_outputs,
+    )
+    save_csv(
+        portfolio_returns,
+        output_dir / "sp500_portfolio_returns.csv",
+        enabled=save_outputs,
+    )
+    save_csv(
+        portfolio_metrics,
+        output_dir / "sp500_portfolio_metrics.csv",
+        enabled=save_outputs,
+    )
+
+    logger.info(
+        "S&P 500 proxy built: %s months, %s models.",
+        realized.shape[0], len(model_cols),
+    )
+
+    return portfolio_returns, portfolio_metrics
+
+
 def create_evaulation_dataset(
         predictions: pd.DataFrame,
         fama_french_charas_df: pd.DataFrame,
@@ -1249,10 +1470,8 @@ def evaluate_predictions(
         f"portfolio_metrics.csv saved to: {output_dir}"
     )
 
-
-
     
-    fama_french_portfolio_returns = build_fama_french_portfolios(
+    fama_french_portfolio_metrics = build_fama_french_portfolios(
         predictions=predictions,
         smb_definition="ff5",
         output_dir=output_dir,
@@ -1262,9 +1481,17 @@ def evaluate_predictions(
     logger.info(
         "Fama-French-style portfolio construction completed: "
         "%s monthly portfolio/model observations.",
-        len(fama_french_portfolio_returns),
+        len(fama_french_portfolio_metrics),
     )    
     
+
+    sp500_portfolio_returns, sp500_portfolio_metrics = build_sp500_portfolio(
+        predictions=predictions,
+        n_constituents=500,
+        membership_update="quarterly",
+        output_dir=output_dir,
+        save_outputs=save_outputs,
+    )
 
 
     feature_importance_results = None
@@ -1289,7 +1516,9 @@ def evaluate_predictions(
         "dm_tests": dm_tests,
         "portfolio_returns": portfolio_returns,
         "portfolio_metrics": portfolio_metrics,
-        "fama_french_portfolio_returns": fama_french_portfolio_returns,
+        "fama_french_portfolio_metrics": fama_french_portfolio_metrics,
+        "sp500_portfolio_returns": sp500_portfolio_returns,
+        "sp500_portfolio_metrics": sp500_portfolio_metrics,
         "feature_importance": feature_importance_results,
     }
 
