@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from config import (
     CacheConfig,
@@ -70,5 +71,63 @@ else:
     feature_cols_path = f"{cache_cfg.cache_dir}/feature_cols_{regime_cfg.mode}.pkl"
 
 
-cached_panel = maybe_load_parquet(feature_panel_path, enabled=True)
+panel = maybe_load_parquet(feature_panel_path, enabled=True)
 
+# ------------------------------------------------------------------
+# 1. Descriptives: permnos, rows, observations per month
+# ------------------------------------------------------------------
+import matplotlib.pyplot as plt
+
+panel["date"] = pd.to_datetime(panel["date"])
+panel["month"] = panel["date"].dt.to_period("M")
+
+n_unique_permno = panel["permno"].nunique()
+n_rows = len(panel)
+
+obs_per_month = (
+    panel.groupby("month")
+    .size()
+    .rename("n_obs")
+    .sort_index()
+)
+avg_obs_per_month = obs_per_month.mean()
+
+print(f"Unique PERMNOs:           {n_unique_permno:,}")
+print(f"Rows:                     {n_rows:,}")
+print(f"Months covered:           {len(obs_per_month):,} "
+      f"({obs_per_month.index.min()} to {obs_per_month.index.max()})")
+print(f"Avg. observations/month:  {avg_obs_per_month:,.1f}")
+print(f"Min / max per month:      {obs_per_month.min():,} / {obs_per_month.max():,}")
+
+# ------------------------------------------------------------------
+# 2. Save for later plotting
+# ------------------------------------------------------------------
+out_dir = Path(descriptives_path)
+out_dir.mkdir(parents=True, exist_ok=True)
+
+summary = pd.DataFrame({
+    "n_unique_permno": [n_unique_permno],
+    "n_rows": [n_rows],
+    "n_months": [len(obs_per_month)],
+    "avg_obs_per_month": [avg_obs_per_month],
+})
+summary.to_csv(out_dir / "descriptives_summary.csv", index=False)
+
+obs_df = obs_per_month.reset_index()
+obs_df["month"] = obs_df["month"].dt.to_timestamp("M")  # month-end timestamp
+obs_df.to_csv(out_dir / "obs_per_month.csv", index=False)
+
+# ------------------------------------------------------------------
+# 3. Plot
+# ------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(obs_df["month"], obs_df["n_obs"], lw=1.5)
+ax.axhline(avg_obs_per_month, ls="--", lw=1, color="grey",
+           label=f"Mean = {avg_obs_per_month:,.0f}")
+ax.set_xlabel("Month")
+ax.set_ylabel("Number of observations")
+ax.set_title("Observations per month")
+ax.legend()
+fig.tight_layout()
+fig.savefig(out_dir / "obs_per_month.png", dpi=200)
+plt.close(fig)
