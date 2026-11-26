@@ -352,3 +352,17 @@ class EvaluationConfig:
     exclude_from_plot: tuple[str, ...] = ("OLS_full",)
 
     exclude_from_table: tuple[str, ...] = ("OLS_full","OLS_3_old")
+
+    # Models drawn in the cumulative-return figure (Gu et al. Figure 9).
+    # Models missing from the data are skipped with a log message.
+    cumulative_return_models: List[str] = field(default_factory=lambda: [
+        "OLS_3", "PLS", "PCR_Linear", "RandomForest", "GBRT", "NN4",
+    ])
+
+    # NBER recession periods as (first month, last month), "YYYY-MM".
+    nber_recessions: List[tuple[str, str]] = field(default_factory=lambda: [
+        ("1990-07", "1991-03"),
+        ("2001-03", "2001-11"),
+        ("2007-12", "2009-06"),
+        ("2020-02", "2020-04"),
+    ])

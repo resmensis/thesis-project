@@ -21,7 +21,7 @@ from dataset_builder import build_complete_dataset
 from features import build_feature_panel
 from prediction_window import run_pred_window
 from evaluation import evaluate_predictions
-from visualization import  r2_metrics, dm_tests, r2_comparison, portfolio_metrics, cumulative_returns
+from visualization import  r2_metrics, dm_tests, r2_comparison, portfolio_metrics, cumulative_returns, portfolio_r2
 
 
 repro_cfg = ReproducibilityConfig(random_state=42)
@@ -99,7 +99,8 @@ for i in ["expanding","rolling"]:
     path_portfolio_metrics = f"{pred_path}/portfolio_metrics.csv"
     path_portfolio_returns= f"{pred_path}/portfolio_returns.parquet"
     path_portfolio_presp_metrics = f"{pred_path}/fama_french_portfolio_metrics.csv"
-    path_portfolio_presp_returns= f"{pred_path}/portfolio_returns.parquet"
+    path_sp500_returns = f"{pred_path}/sp500_portfolio_returns.parquet"
+    path_sp500_metrics = f"{pred_path}/sp500_portfolio_metrics.csv"
 
 
 
@@ -147,20 +148,25 @@ for i in ["expanding","rolling"]:
         portfolio_metrics=pd.read_csv(path_portfolio_metrics),
         eval_config=eval_cfg,
         output_path=visualization_path,
-        file_name=f"portfolio_performance_{i}",
+        file_name=f"ml_portfolio_performance_{i}",
         sample_years="1987 -- 2021",
     )
 
-    """
     cumulative_table = cumulative_returns(
-        portfolio_returns=pd.read_parquet(path_portfolio_returns), 
+        portfolio_returns=pd.read_parquet(path_portfolio_returns),
         eval_config=eval_cfg,
-        output_path=visualization_path, 
+        output_path=visualization_path,
         file_name=f"cumulative_returns_{i}",
-        sample_years="1987--2021", 
-        market_excess_returns=mkt)
-    """
-    
+        sample_years="1987--2021",
+        sp500_returns=pd.read_parquet(path_sp500_returns),
+    )
 
-
+    portfolio_r2_table = portfolio_r2(
+        fama_french_portfolio_metrics=pd.read_csv(path_portfolio_presp_metrics),
+        sp500_portfolio_metrics=pd.read_csv(path_sp500_metrics),
+        eval_config=eval_cfg,
+        output_path=visualization_path,
+        file_name=f"prespecified_portfolio_r2_{i}",
+        sample_years="1987 -- 2021",
+    )
 

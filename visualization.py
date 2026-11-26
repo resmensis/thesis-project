@@ -1000,21 +1000,13 @@ def portfolio_metrics(
     return outputs
 
 
-NBER_RECESSIONS = [
-    ("1990-07", "1991-03"),
-    ("2001-03", "2001-11"),
-    ("2007-12", "2009-06"),
-    ("2020-02", "2020-04"),
-]
-
-
 def cumulative_returns(
     portfolio_returns: pd.DataFrame,
     eval_config,
     output_path: str | Path,
     file_name: str,
     sample_years: str,
-    market_excess_returns: pd.Series | None = None,
+    sp500_returns: pd.DataFrame | None = None,
     models: list[str] | None = None,
     label: str = "fig:cumulative_returns",
     invert_short: bool = False,
@@ -1024,19 +1016,26 @@ def cumulative_returns(
 
     Plots cumulative log returns of value-weighted decile portfolios sorted
     on out-of-sample forecasts. Solid = long (portfolio "10"), dashed =
-    short (portfolio "1"), black = cumulative market excess return.
+    short (portfolio "1"), black = cumulative S&P 500 proxy excess return.
 
-    Required columns:
+    portfolio_returns required columns:
         date, model, weighting, portfolio, realized_return
+
+    sp500_returns: output of build_sp500_portfolio() (the content of
+        sp500_portfolio_returns.parquet), long format with columns
+        date, model, realized_return and optionally portfolio / weighting.
+        The S&P 500 realized return does not depend on the model, so the
+        rows are collapsed to one series per month. The function raises if
+        models disagree for a month.
 
     realized_return must be a decimal monthly excess return (not percent).
     portfolio must be a string ("1".."10" or "high_minus_low").
-    market_excess_returns: decimal monthly excess returns indexed by month.
     invert_short: if True, plot the negative of the bottom-decile
         cumulative log return (economic short position).
 
-    Uses eval_config.preferred_order, default_labels, default_sublabels
-    and exclude_from_plot. Configured labels are treated as LaTeX.
+    Uses eval_config.preferred_order, default_labels, default_sublabels,
+    exclude_from_plot, cumulative_return_models and nber_recessions.
+    Configured labels are treated as LaTeX.
     """
     required = {"date", "model", "weighting", "portfolio", "realized_return"}
     missing = required.difference(portfolio_returns.columns)
@@ -1067,8 +1066,11 @@ def cumulative_returns(
         return "".join(replacements.get(c, c) for c in str(text))
 
     def to_month_start(values):
-        return pd.to_datetime(values).to_period("M").to_timestamp()
-
+        dates = pd.to_datetime(values)
+        if not pd.DatetimeIndex(dates).is_month_start.all():
+            raise ValueError("Dates must be month-start timestamps.")
+        return dates
+    
     def clean_returns(values, name):
         out = pd.to_numeric(values, errors="raise").replace(
             [np.inf, -np.inf], np.nan
@@ -1101,12 +1103,18 @@ def cumulative_returns(
     data["realized_return"] = clean_returns(data["realized_return"], "portfolio_returns")
 
     available = data["model"].drop_duplicates().tolist()
-    default_models = [
-        "OLS_3", "PLS", "PCR_Linear", "ENet", "GLM",
-        "RandomForest", "GBRT", "NN4",
-    ]
     if models is None:
-        requested = [m for m in default_models if m in available]
+        requested = [
+            m for m in eval_config.cumulative_return_models if m in available
+        ]
+        absent = [
+            m for m in eval_config.cumulative_return_models
+            if m not in available
+        ]
+        if absent:
+            logger.info(
+                f"cumulative_returns: configured models not in data: {absent}"
+            )
     else:
         unknown = [m for m in models if m not in available]
         if unknown:
@@ -1143,21 +1151,51 @@ def cumulative_returns(
         logger.info(f"cumulative_returns: {name}: {dropped} months with missing returns.")
 
     market = None
-    if market_excess_returns is not None:
-        market = pd.Series(market_excess_returns).copy()
-        market.index = to_month_start(market.index)
-        if market.index.duplicated().any():
-            raise ValueError("market_excess_returns has duplicate months.")
-        market = clean_returns(market, "market_excess_returns").reindex(all_dates)
+    if sp500_returns is not None:
+        sp_required = {"date", "model", "realized_return"}
+        sp_missing = sp_required.difference(sp500_returns.columns)
+        if sp_missing:
+            raise KeyError(f"Missing sp500_returns columns: {sorted(sp_missing)}")
+        if sp500_returns.empty:
+            raise ValueError("sp500_returns is empty.")
+
+        sp = sp500_returns.copy()
+        if "portfolio" in sp.columns:
+            sp = sp[sp["portfolio"].astype(str).eq("S&P 500")]
+        if "weighting" in sp.columns:
+            sp = sp[sp["weighting"].astype(str).eq("value_weighted")]
+        if sp.empty:
+            raise ValueError("No value-weighted 'S&P 500' rows in sp500_returns.")
+
+        sp["date"] = to_month_start(sp["date"])
+        sp["model"] = sp["model"].astype(str)
+        if sp[["date", "model"]].isna().any().any():
+            raise ValueError("sp500_returns: date and model must not be missing.")
+        if sp.duplicated(["model", "date"]).any():
+            raise ValueError("sp500_returns: expected one row per model and date.")
+        sp["realized_return"] = clean_returns(sp["realized_return"], "sp500_returns")
+
+        # The S&P 500 return is model-independent: collapse and verify.
+        grouped = sp.groupby("date")["realized_return"]
+        spread = grouped.max() - grouped.min()
+        n_nan = grouped.apply(lambda s: int(s.isna().sum()))
+        n_rows = grouped.size()
+        mixed_nan = (n_nan > 0) & (n_nan < n_rows)
+        if (spread > 1e-12).any() or mixed_nan.any():
+            raise ValueError(
+                "sp500_returns: realized_return differs across models "
+                "within a month; expected a model-independent series."
+            )
+        market = grouped.max().reindex(all_dates)
         logger.info(
-            f"cumulative_returns: market: {int(market.isna().sum())} "
+            f"cumulative_returns: S&P 500: {int(market.isna().sum())} "
             "months missing after alignment."
         )
         valid &= market.notna()
 
     common = all_dates[valid.to_numpy()]
     if len(common) < 2:
-        raise ValueError("Fewer than two common months across models and market.")
+        raise ValueError("Fewer than two common months across models and S&P 500.")
     if len(common) != len(all_dates):
         logger.info(
             f"cumulative_returns: using {len(common)} of {len(all_dates)} months "
@@ -1191,6 +1229,8 @@ def cumulative_returns(
         "0072B2", "D55E00", "009E73", "CC79A7",
         "E69F00", "56B4E9", "882255", "117733",
     ]
+    if len(plot_models) > len(palette):
+        raise ValueError(f"At most {len(palette)} models are supported.")
     colors = {m: f"crmodel{i}" for i, m in enumerate(plot_models)}
 
     def model_label(model):
@@ -1210,7 +1250,7 @@ def cumulative_returns(
     ticks = ",".join(str(t) for t in range(first_tick, last_tick + 1, 3))
 
     recessions = []
-    for start, end in NBER_RECESSIONS:
+    for start, end in eval_config.nber_recessions:
         x0 = max(x_start(pd.Timestamp(start)), x_min)
         x1 = min(x_end(pd.Timestamp(end)), x_max)
         if x0 < x1:
@@ -1227,8 +1267,6 @@ def cumulative_returns(
     ]
     for i, color in enumerate(palette[:len(plot_models)]):
         lines.append(rf"\definecolor{{crmodel{i}}}{{HTML}}{{{color}}}")
-    if len(plot_models) > len(palette):
-        raise ValueError(f"At most {len(palette)} models are supported.")
 
     lines.extend([
         r"\begin{tikzpicture}",
@@ -1278,7 +1316,7 @@ def cumulative_returns(
         lines.extend([
             rf"\addplot[black,solid,no marks,thick] "
             rf"coordinates {{{coords(market_cum)}}};",
-            r"\addlegendentry{Market}",
+            r"\addlegendentry{S\&P 500}",
         ])
 
     lines.extend([
@@ -1304,7 +1342,11 @@ def cumulative_returns(
         r"Shaded areas indicate NBER recessions. "
     )
     if market_cum is not None:
-        notes += r"The market line is the cumulative excess market return. "
+        notes += (
+            r"The S\&P 500 line is the cumulative excess return of a "
+            r"value-weighted proxy built from the largest 500 stocks by "
+            r"lagged market equity. "
+        )
     else:
         notes += r"No market benchmark was supplied. "
     notes += (
@@ -1324,3 +1366,281 @@ def cumulative_returns(
 
     return output_path
 
+
+def portfolio_r2(
+    fama_french_portfolio_metrics: pd.DataFrame,
+    sp500_portfolio_metrics: pd.DataFrame,
+    eval_config,
+    output_path: str | Path,
+    file_name: str,
+    sample_years: str,
+    label: str = "tab:portfolio_r2",
+) -> Path:
+    """
+    Recreate a Gu et al. Table 5-style LaTeX table of portfolio-level R2.
+
+    Required columns in both inputs:
+        panel, family, portfolio, model, r2
+    An optional weighting column must contain only 'value_weighted'.
+
+    R2 values must be fractions; they are displayed in percent.
+    Model columns follow eval_config.preferred_order, then any further
+    models in order of appearance, as in r2_metrics().
+    Rows are looked up by (panel, family, portfolio, model), so the
+    'Big neutral' and 'Small neutral' rows of different families
+    never collide.
+
+    Missing row/model combinations are printed as '--'.
+    Configured model labels and sublabels are treated as LaTeX.
+    """
+    # panel, family, portfolio identifier, displayed label
+    panel_a_rows = [
+        ("A", "market", "S&P 500", "S&P 500"),
+        ("A", "size", "SMB", "SMB"),
+        ("A", "value", "HML", "HML"),
+        ("A", "profitability", "RMW", "RMW"),
+        ("A", "investment", "CMA", "CMA"),
+        ("A", "momentum", "UMD", "UMD"),
+    ]
+    panel_b_blocks = [
+        ("value", ["value", "growth", "neutral"]),
+        ("investment", ["conservative", "aggressive", "neutral"]),
+        ("profitability", ["robust", "weak", "neutral"]),
+        ("momentum", ["up", "down", "medium"]),
+    ]
+    panel_b_rows = [
+        [
+            ("B", family, f"{size} {name}", f"{size} {name}")
+            for size in ("Big", "Small")
+            for name in names
+        ]
+        for family, names in panel_b_blocks
+    ]
+    expected_rows = {
+        (panel, family, portfolio)
+        for panel, family, portfolio, _ in (
+            panel_a_rows + [row for block in panel_b_rows for row in block]
+        )
+    }
+
+    def escape_latex(text):
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        return "".join(replacements.get(c, c) for c in str(text))
+
+    key_cols = ["panel", "family", "portfolio", "model"]
+    required = {*key_cols, "r2"}
+
+    def prepare(frame, frame_name):
+        missing = required.difference(frame.columns)
+        if missing:
+            raise KeyError(f"{frame_name}: missing columns {sorted(missing)}")
+        if frame.empty:
+            raise ValueError(f"{frame_name} is empty.")
+
+        if "weighting" in frame.columns:
+            weightings = frame["weighting"].dropna().astype(str)
+            if not weightings.eq("value_weighted").all():
+                raise ValueError(
+                    f"{frame_name}: expected only 'value_weighted' "
+                    "weighting."
+                )
+
+        data = frame[[*key_cols, "r2"]].copy()
+        if data[key_cols].isna().any().any():
+            raise ValueError(
+                f"{frame_name}: panel, family, portfolio, and model "
+                "must not be missing."
+            )
+        data[key_cols] = data[key_cols].astype(str)
+        data["r2"] = pd.to_numeric(data["r2"], errors="raise")
+        return data
+
+    data = pd.concat(
+        [
+            prepare(fama_french_portfolio_metrics, "fama_french_portfolio_metrics"),
+            prepare(sp500_portfolio_metrics, "sp500_portfolio_metrics"),
+        ],
+        ignore_index=True,
+    )
+
+    excluded = sorted(
+        set(data["model"]).intersection(eval_config.exclude_from_table)
+    )
+    if excluded:
+        logger.info(
+            f"portfolio_r2: excluding models via exclude_from_table: "
+            f"{excluded}"
+        )
+    data = data[
+        ~data["model"].isin(eval_config.exclude_from_table)
+    ].copy()
+
+    if data.empty:
+        raise ValueError("No models remain after exclude_from_table.")
+
+    if data.duplicated(key_cols).any():
+        raise ValueError(
+            "Expected one row per panel, family, portfolio, and model."
+        )
+
+    observed_rows = set(
+        data[["panel", "family", "portfolio"]].itertuples(
+            index=False, name=None
+        )
+    )
+    unexpected = sorted(observed_rows.difference(expected_rows))
+    if unexpected:
+        raise ValueError(
+            "Unexpected (panel, family, portfolio) combinations: "
+            f"{unexpected}"
+        )
+
+    if not re.fullmatch(r"[A-Za-z0-9:._-]+", label):
+        raise ValueError("Use a simple LaTeX label.")
+
+    output_path = Path(f"{output_path}/{file_name}.tex")
+    if output_path.suffix.lower() != ".tex":
+        raise ValueError("output_path must have a .tex extension.")
+
+    available = data["model"].drop_duplicates().tolist()
+    ordered = list(dict.fromkeys(
+        [name for name in eval_config.preferred_order if name in available]
+        + available
+    ))
+
+    labels = {
+        name: eval_config.default_labels.get(name, escape_latex(name))
+        for name in ordered
+    }
+    sublabels = {
+        name: eval_config.default_sublabels.get(name, "")
+        for name in ordered
+    }
+
+    data["r2"] = (
+        data["r2"].replace([np.inf, -np.inf], np.nan) * 100.0
+    )
+    lookup = data.set_index(key_cols)["r2"]
+
+    def get_value(panel, family, portfolio, model):
+        return lookup.get((panel, family, portfolio, model), np.nan)
+
+    def format_value(value):
+        if pd.isna(value):
+            return r"\multicolumn{1}{c}{--}"
+        text = f"{value:.2f}"
+        return "0.00" if text == "-0.00" else text
+
+    finite_values = data["r2"].dropna()
+    integer_digits = max(
+        (len(f"{abs(value):.2f}".split(".")[0]) for value in finite_values),
+        default=1,
+    )
+    numeric_column = (
+        f"S[table-format=-{integer_digits}.2,"
+        "output-decimal-marker={.}]"
+    )
+
+    n_columns = len(ordered) + 1
+
+    def table_row(row):
+        panel, family, portfolio, display = row
+        values = " & ".join(
+            format_value(get_value(panel, family, portfolio, model))
+            for model in ordered
+        )
+        return f"{escape_latex(display)} & {values}" + r" \\"
+
+    def panel_title(title):
+        return (
+            rf"\multicolumn{{{n_columns}}}{{l}}"
+            rf"{{\textit{{{escape_latex(title)}}}}} \\"
+        )
+
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\centering",
+        r"\begin{threeparttable}",
+        (
+            r"\caption{Monthly portfolio-level out-of-sample predictive "
+            r"$R^2$ (percent): "
+            + escape_latex(sample_years)
+            + "}"
+        ),
+        rf"\label{{{label}}}",
+        r"\begingroup",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\renewcommand{\arraystretch}{1.15}",
+        (
+            r"\begin{tabular*}{\textwidth}"
+            r"{@{\extracolsep{\fill}}l"
+            + numeric_column * len(ordered)
+            + r"@{}}"
+        ),
+        r"\toprule",
+        " & " + " & ".join(
+            rf"\multicolumn{{1}}{{c}}{{{labels[m]}}}" for m in ordered
+        ) + r" \\",
+        " & " + " & ".join(
+            rf"\multicolumn{{1}}{{c}}{{{sublabels[m]}}}" for m in ordered
+        ) + r" \\",
+        r"\midrule",
+        panel_title("A. Common factor portfolios"),
+        *[table_row(row) for row in panel_a_rows],
+        r"\addlinespace",
+        panel_title("B. Subcomponents of factor portfolios"),
+    ]
+
+    for i, block in enumerate(panel_b_rows):
+        if i > 0:
+            lines.append(r"\addlinespace")
+        lines.extend(table_row(row) for row in block)
+
+    lines.extend([
+        r"\bottomrule",
+        r"\end{tabular*}",
+        r"\endgroup",
+        r"\begin{tablenotes}[flushleft]",
+        r"\footnotesize",
+        (
+            r"\item Notes: Entries report monthly out-of-sample "
+            r"$R^2_{\mathrm{OOS}}$ in percent, computed on portfolio-level "
+            r"returns and forecasts. The 29 portfolios (an S\&P 500 proxy, "
+            r"five factor portfolios, and 24 size double-sorted portfolios) "
+            r"are constructed from stock-level predictions using value "
+            r"weights. The S\&P 500 is a proxy formed from the 500 stocks "
+            r"with the largest market equity, not the index itself. "
+            r"Factor portfolios are monthly sorts on the evaluation "
+            r"universe, not the official French portfolios. "
+            r"$R^2_{\mathrm{OOS}}$ uses the zero-benchmark denominator "
+            r"$\sum r^2$. Model columns follow the order and labels of "
+            r"the stock-level performance table. "
+            r"The out-of-sample period is "
+            + escape_latex(sample_years)
+            + r". A dash denotes an unavailable or nonfinite result."
+        ),
+        r"\end{tablenotes}",
+        r"\end{threeparttable}",
+        r"\end{table}",
+    ])
+
+    ensure_dir(output_path.parent)
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    logger.info(
+        f"Visualisation part finished: "
+        f"{file_name}.tex saved to: {output_path}"
+    )
+
+    return output_path
